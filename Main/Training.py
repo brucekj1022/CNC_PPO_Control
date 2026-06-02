@@ -31,9 +31,9 @@ n_states=131# action 28, path FFT 100, maxResonance 2, error 1
 numFC=14#頻率點數量
 bound= 20*np.log10(3000)#神經網路輸出限制dB
 parser1 = argparse.ArgumentParser(description="PPO參數")
-parser1.add_argument('--iteration', type=int, default=6000)
+parser1.add_argument('--iteration', type=int, default=3000)
 parser1.add_argument('--n_step_learning', type=int, default=20)
-parser1.add_argument('--learning_rate', type=float, default=1e-6)
+parser1.add_argument('--learning_rate', type=float, default=1e-5)
 parser1.add_argument('--mini_batch', type=int, default=30)
 parser1.add_argument('--batch_size', type=int, default=2000)
 parser1.add_argument('--n_round_batch', type=int, default=60)
@@ -240,6 +240,14 @@ for iteration in range(1, PPO_parameter.iteration+1):#總輪數
         FC = FC[sorted_indices]  # 按照索引排序FC
         #是否合成新控制器並模擬運行
         status, CC, ek_hat, manual_add_FC=costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step%3])
+
+        CC_tf = ctrl.ss2tf(CC)
+        den = np.array(CC_tf.den[0][0], dtype=np.float32)
+        cdl=len(den)#controller_data_len
+        num = np.array(CC_tf.num[0][0], dtype=np.float32)
+        num = np.pad(num, (0, cdl - len(num)), mode='constant')#補齊避免分子階數不足
+        print(den,num)
+
         path_district=path[path_index : path_index+pdl]
         X0, ek_buffer[(step+2)%3 , :], _=CNC.SimulateResponse(path_district.copy(), CC.copy(), Plant['v2p'], X0,Ts)#模擬輸出Controller給工具機
         #PlotExporter.plot_frame(CC, Plant['v2p'], FC, manual_add_FC)#製作Gif
