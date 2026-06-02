@@ -1,0 +1,32 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Matlab
+Matlab/slprj/
+*.slxc
+*.asv
+
+# Model weights (太大，另存 Google Drive/OneDrive)
+Model/
+
+# 系統文件
+Thumbs.db
+.DS_Store
+
+# 暫存
+*.tmp
+*.bak
+frames/
+fft_frames/

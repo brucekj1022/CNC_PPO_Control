@@ -1,0 +1,95 @@
+============================================================
+實驗基本資訊
+============================================================
+
+【執行資訊】
+  執行程式: Simulation.py
+
+【時間資訊】
+  實驗時間: 2026-06-01 22:40:05
+  實驗時長: 0分16秒
+  實際步數: 50
+
+【Model資訊】
+  使用模式: 單模型
+  Model1 檔案: Modelran1.pth
+  Model1 輪數: 9000
+
+【系統參數】
+  採樣時間 Ts: 0.001 s
+  路徑區間長度 pdl: 300 ms
+  頻率限制點數量 numFC: 14
+  FFT頻率上限: 94.25 rad/s
+  低頻限制點數: 3
+  X軸極點增益: 0.4352
+  Z軸極點增益: 0.4952
+
+【CNC參數】
+  Lq: 10
+
+【參考路徑資訊】
+  路徑總長度: 15000
+  路徑區間數: 50
+  路徑時間: 15.0 s
+
+【誤差統計】
+  RMS Error: 261.5154 μm
+  Max Error: 4510.2841 μm
+  Mean Error: 49.1898 μm
+============================================================
+每步詳細狀況
+============================================================
+Step   | Status          | Freq (rad/s)         | Mag (dB)     | Model          
+------------------------------------------------------------
+0      | Solved          | 0                    | 0            | model1         
+1      | Solved          | 0                    | 0            | model1         
+2      | Solved          | 0                    | 0            | model1         
+3      | Solved          | 0                    | 0            | model1         
+4      | Solved          | 0                    | 0            | model1         
+5      | Solved          | 0                    | 0            | model1         
+6      | Solved          | 615.75               | 0.00040429   | model1         
+7      | Solved          | 622.04               | 9.608e-07    | model1         
+8      | semiSolved      | 622.04               | -4.0812e-05  | model1         
+9      | Infeasible      | 609.47               | 7.733e-07    | model1         
+10     | Solved          | 609.47               | 8.0533e-07   | model1         
+11     | Solved          | 609.47               | 7.8417e-07   | model1         
+12     | semiSolved      | 603.19               | -0.00029628  | model1         
+13     | Solved          | 596.90               | 0.00031807   | model1         
+14     | Infeasible      | 596.90               | 0.00016139   | model1         
+15     | Solved          | 603.19               | -5.8468e-05  | model1         
+16     | Infeasible      | 603.19               | -0.0010941   | model1         
+17     | Infeasible      | 596.90               | -0.002654    | model1         
+18     | Solved          | 0                    | 0            | model1         
+19     | Solved          | 0                    | 0            | model1         
+20     | Solved          | 0                    | 0            | model1         
+21     | Solved          | 0                    | 0            | model1         
+22     | Solved          | 0                    | 0            | model1         
+23     | Solved          | 0                    | 0            | model1         
+24     | Solved          | 0                    | 0            | model1         
+25     | Solved          | 0                    | 0            | model1         
+26     | Solved          | 0                    | 0            | model1         
+27     | Solved          | 0                    | 0            | model1         
+28     | Solved          | 0                    | 0            | model1         
+29     | Solved          | 0                    | 0            | model1         
+30     | Infeasible      | 0                    | 0            | model1         
+31     | Solved          | 0                    | 0            | model1         
+32     | Solved          | 0                    | 0            | model1         
+33     | Infeasible      | 0                    | 0            | model1         
+34     | Infeasible      | 0                    | 0            | model1         
+35     | Infeasible      | 0                    | 0            | model1         
+36     | Solved          | 0                    | 0            | model1         
+37     | semiSolved      | 0                    | 0            | model1         
+38     | Solved          | 0                    | 0            | model1         
+39     | Solved          | 0                    | 0            | model1         
+40     | Solved          | 0                    | 0            | model1         
+41     | Solved          | 0                    | 0            | model1         
+42     | Infeasible      | 0                    | 0            | model1         
+43     | Solved          | 0                    | 0            | model1         
+44     | semiSolved      | 0                    | 0            | model1         
+45     | Solved          | 0                    | 0            | model1         
+46     | semiSolved      | 0                    | 0            | model1         
+47     | Solved          | 0                    | 0            | model1         
+48     | Infeasible      | 0                    | 0            | model1         
+49     | Infeasible      | 0                    | 0            | model1         
+
+============================================================

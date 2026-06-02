@@ -1,0 +1,145 @@
+============================================================
+實驗基本資訊
+============================================================
+
+【執行資訊】
+  執行程式: Runtime.py
+
+【時間資訊】
+  實驗時間: 2026-01-05 14:56:48
+  實驗時長: 0分35秒
+  實際步數: 100
+
+【Model資訊】
+  使用模式: 單模型
+  Model1 檔案: Modelran.pth
+  Model1 輪數: 9000
+
+【系統參數】
+  採樣時間 Ts: 0.001 s
+  路徑區間長度 pdl: 300 ms
+  頻率限制點數量 numFC: 14
+  FFT頻率上限: 12.57 rad/s
+  低頻限制點數: 3
+  X軸極點增益: 0.4352
+  Z軸極點增益: 0.4952
+
+【CNC參數】
+  Lq: 10
+
+【參考路徑資訊】
+  路徑總長度: 30000
+  路徑區間數: 100
+  路徑時間: 30.0 s
+
+【誤差統計】
+  RMS Error: 45.4801 μm
+  Max Error: 216.6330 μm
+  Mean Error: 28.3028 μm
+============================================================
+每步詳細狀況
+============================================================
+Step   | Status          | Freq (rad/s)         | Mag (dB)     | Model          
+------------------------------------------------------------
+0      | Solved          | 0                    | 0            | model1         
+1      | Solved          | 0                    | 0            | model1         
+2      | Solved          | 0                    | 0            | model1         
+3      | Infeasible      | 0                    | 0            | model1         
+4      | Solved          | 0                    | 0            | model1         
+5      | Solved          | 0                    | 0            | model1         
+6      | Solved          | 0                    | 0            | model1         
+7      | Solved          | 0                    | 0            | model1         
+8      | Solved          | 0                    | 0            | model1         
+9      | Solved          | 0                    | 0            | model1         
+10     | Solved          | 0                    | 0            | model1         
+11     | Solved          | 0                    | 0            | model1         
+12     | Solved          | 0                    | 0            | model1         
+13     | Solved          | 0                    | 0            | model1         
+14     | Infeasible      | 0                    | 0            | model1         
+15     | Solved          | 0                    | 0            | model1         
+16     | Infeasible      | 0                    | 0            | model1         
+17     | Solved          | 0                    | 0            | model1         
+18     | Solved          | 0                    | 0            | model1         
+19     | Solved          | 0                    | 0            | model1         
+20     | Solved          | 0                    | 0            | model1         
+21     | Solved          | 0                    | 0            | model1         
+22     | Solved          | 0                    | 0            | model1         
+23     | Solved          | 0                    | 0            | model1         
+24     | Solved          | 0                    | 0            | model1         
+25     | Solved          | 0                    | 0            | model1         
+26     | Solved          | 0                    | 0            | model1         
+27     | Solved          | 0                    | 0            | model1         
+28     | Solved          | 0                    | 0            | model1         
+29     | Solved          | 0                    | 0            | model1         
+30     | Solved          | 0                    | 0            | model1         
+31     | Solved          | 0                    | 0            | model1         
+32     | Solved          | 0                    | 0            | model1         
+33     | Solved          | 0                    | 0            | model1         
+34     | Solved          | 0                    | 0            | model1         
+35     | Infeasible      | 0                    | 0            | model1         
+36     | Solved          | 0                    | 0            | model1         
+37     | Solved          | 0                    | 0            | model1         
+38     | Infeasible      | 0                    | 0            | model1         
+39     | Solved          | 0                    | 0            | model1         
+40     | Solved          | 0                    | 0            | model1         
+41     | Solved          | 0                    | 0            | model1         
+42     | Solved          | 0                    | 0            | model1         
+43     | Solved          | 0                    | 0            | model1         
+44     | Infeasible      | 0                    | 0            | model1         
+45     | Infeasible      | 0                    | 0            | model1         
+46     | Solved          | 0                    | 0            | model1         
+47     | Infeasible      | 0                    | 0            | model1         
+48     | Infeasible      | 0                    | 0            | model1         
+49     | Solved          | 0                    | 0            | model1         
+50     | Solved          | 0                    | 0            | model1         
+51     | Solved          | 0                    | 0            | model1         
+52     | Solved          | 0                    | 0            | model1         
+53     | Solved          | 0                    | 0            | model1         
+54     | Solved          | 0                    | 0            | model1         
+55     | Solved          | 0                    | 0            | model1         
+56     | Solved          | 0                    | 0            | model1         
+57     | Solved          | 0                    | 0            | model1         
+58     | Solved          | 0                    | 0            | model1         
+59     | Solved          | 0                    | 0            | model1         
+60     | Solved          | 0                    | 0            | model1         
+61     | Solved          | 0                    | 0            | model1         
+62     | Solved          | 0                    | 0            | model1         
+63     | Solved          | 0                    | 0            | model1         
+64     | Solved          | 0                    | 0            | model1         
+65     | Solved          | 0                    | 0            | model1         
+66     | Infeasible      | 0                    | 0            | model1         
+67     | Solved          | 0                    | 0            | model1         
+68     | Solved          | 0                    | 0            | model1         
+69     | Solved          | 0                    | 0            | model1         
+70     | Solved          | 0                    | 0            | model1         
+71     | Solved          | 0                    | 0            | model1         
+72     | Solved          | 0                    | 0            | model1         
+73     | Solved          | 0                    | 0            | model1         
+74     | Infeasible      | 0                    | 0            | model1         
+75     | Infeasible      | 0                    | 0            | model1         
+76     | Infeasible      | 0                    | 0            | model1         
+77     | Solved          | 0                    | 0            | model1         
+78     | Infeasible      | 0                    | 0            | model1         
+79     | Solved          | 0                    | 0            | model1         
+80     | Infeasible      | 0                    | 0            | model1         
+81     | Solved          | 0                    | 0            | model1         
+82     | Solved          | 0                    | 0            | model1         
+83     | Solved          | 0                    | 0            | model1         
+84     | Solved          | 0                    | 0            | model1         
+85     | Solved          | 0                    | 0            | model1         
+86     | Solved          | 0                    | 0            | model1         
+87     | Solved          | 0                    | 0            | model1         
+88     | Solved          | 0                    | 0            | model1         
+89     | Solved          | 0                    | 0            | model1         
+90     | Solved          | 0                    | 0            | model1         
+91     | Solved          | 0                    | 0            | model1         
+92     | Solved          | 0                    | 0            | model1         
+93     | Infeasible      | 0                    | 0            | model1         
+94     | Solved          | 0                    | 0            | model1         
+95     | Solved          | 0                    | 0            | model1         
+96     | Solved          | 0                    | 0            | model1         
+97     | Solved          | 0                    | 0            | model1         
+98     | Solved          | 0                    | 0            | model1         
+99     | Solved          | 0                    | 0            | model1         
+
+============================================================

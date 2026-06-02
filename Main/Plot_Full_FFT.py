@@ -1,0 +1,119 @@
+﻿import os
+import tkinter as tk
+from tkinter import filedialog
+
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.fft
+import scipy.signal
+
+
+def select_data_file() -> str:
+    """選擇 runtime_data.npz 檔案"""
+    root = tk.Tk()
+    root.withdraw()
+    initial_dir = os.path.join('..', 'ExperimentData')
+    if not os.path.exists(initial_dir):
+        initial_dir = '..'
+    file_path = filedialog.askopenfilename(
+        title='選擇實驗數據檔案 (runtime_data.npz)',
+        initialdir=initial_dir,
+        filetypes=[('NumPy檔案', '*.npz'), ('所有檔案', '*.*')]
+    )
+    root.destroy()
+    return file_path
+
+
+def main():
+    file_path = select_data_file()
+    if not file_path:
+        print('未選擇檔案，結束程式。')
+        return
+
+    # 載入數據
+    data = np.load(file_path, allow_pickle=True)
+    error_list = data['error_list']
+    Ts = float(data['Ts'])
+
+    print(f'共 {len(error_list)} 步')
+    print(f'每步 {len(error_list[0])} 點')
+    print(f'總共 {len(error_list) * len(error_list[0])} 點')
+    print(f'採樣時間 Ts = {Ts} 秒\n')
+
+    # 合併所有誤差
+    all_errors = np.concatenate(error_list)
+    all_errors = all_errors - np.mean(all_errors)
+
+    # FFT with zero-padding for better frequency resolution
+    N_original = len(all_errors)
+    N_fft = 10000  # 增加FFT點數 (zero-padding)
+    window = np.hanning(N_original)
+    windowed_errors = window * all_errors
+    yf = scipy.fft.fft(windowed_errors, n=N_fft)
+    xf = scipy.fft.fftfreq(N_fft, Ts)
+
+    magnitude = np.abs(yf[:N_fft//2])
+    omega = (2 * np.pi * xf)[:N_fft//2]
+
+    freq_resolution_rad = (1 / Ts) / N_fft * 2 * np.pi
+    print(f'FFT點數: {N_fft}')
+    print(f'頻率分辨率: {freq_resolution_rad:.6f} rad/s')
+    freq_limit_rad = 500 * 2 * np.pi
+    print(f'0-{freq_limit_rad:.0f} rad/s 數據點數: {len(omega[omega < freq_limit_rad])}\n')
+
+    # 僅查看設定上限對應的 rad/s 範圍
+    mask = omega < freq_limit_rad
+    omega_plot = omega[mask]
+    magnitude_plot = magnitude[mask]
+
+    # 找峰值
+    peaks, _ = scipy.signal.find_peaks(magnitude_plot, height=np.max(magnitude_plot)*0.1, distance=10)
+    peak_freqs = omega_plot[peaks]
+    peak_mags = magnitude_plot[peaks]
+
+    # 只取最高峰值
+    sorted_idx = np.argsort(peak_mags)[::-1][:1]
+    top_peaks = peaks[sorted_idx]
+    top_freqs = peak_freqs[sorted_idx]
+    top_mags = peak_mags[sorted_idx]
+
+    # 畫圖
+    plt.figure(figsize=(14, 8))
+
+    plt.subplot(2, 1, 1)
+    plt.plot(np.arange(len(all_errors)) * Ts, all_errors)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Error')
+    plt.title('Full Error Time Domain')
+    plt.grid(True)
+
+    plt.subplot(2, 1, 2)
+    plt.plot(omega_plot, magnitude_plot)
+    plt.plot(top_freqs, top_mags, 'r*', markersize=12)
+    plt.xlabel('Frequency (rad/s)')
+    plt.ylabel('Magnitude')
+    plt.title('Full Error FFT Spectrum')
+    plt.xlim([0, freq_limit_rad])
+    plt.ylim([0, np.max(magnitude_plot) * 1.2])
+    for f, m in zip(top_freqs, top_mags):
+        freq_hz = f / (2 * np.pi)
+        label = f'{f:.1f} rad/s ({freq_hz:.1f} Hz)'
+        plt.text(f, m*1.08, label, ha='center', fontsize=14, color='red', fontweight='bold')
+    plt.grid(True)
+
+    plt.tight_layout()
+
+    output_dir = os.path.dirname(file_path)
+    output_path = os.path.join(output_dir, 'error_full_fft.png')
+    plt.savefig(output_path, dpi=150)
+
+    print('最高峰值:')
+    for i, (f, m) in enumerate(zip(top_freqs, top_mags)):
+        print(f'{f:.2f} rad/s ({f/(2 * np.pi):.2f} Hz) - Magnitude: {m:.2f}')
+    print(f'\nImage saved: {output_path}')
+
+    plt.show()
+
+
+if __name__ == '__main__':
+    main()

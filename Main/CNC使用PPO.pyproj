@@ -1,0 +1,51 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>33ebd0d3-5df2-47a9-9586-139be6838427</ProjectGuid>
+    <ProjectHome>
+    </ProjectHome>
+    <StartupFile>Training.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>CNC使用PPO</Name>
+    <RootNamespace>PPO_continue3</RootNamespace>
+    <SuppressConfigureTestFrameworkPrompt>true</SuppressConfigureTestFrameworkPrompt>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Test.py">
+      <SubType>Code</SubType>
+    </Content>
+    <Compile Include="pc_server.py" />
+    <Compile Include="Plot_Exp_data.py" />
+    <Compile Include="Plot_Full_fft.py" />
+    <Compile Include="Plot_return.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PPO_Brain.py" />
+    <Compile Include="Runtime.py" />
+    <Compile Include="Simulation.py" />
+    <Compile Include="Training.py" />
+    <Compile Include="CNC.py" />
+    <Compile Include="暫存.py" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>

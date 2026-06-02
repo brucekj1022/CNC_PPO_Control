@@ -1,0 +1,98 @@
+============================================================
+實驗基本資訊
+============================================================
+
+【執行資訊】
+  執行程式: Runtime.py
+
+【時間資訊】
+  實驗時間: 2025-12-31 11:06:23
+  實驗時長: 0分20秒
+  實際步數: 50
+
+【Model資訊】
+  使用模式: 雙模型切換
+  Model1 檔案: Modelunc.pth
+  Model1 輪數: 9000
+  Model2 檔案: Modelran.pth
+  Model2 輪數: 9000
+  切換步數: 13
+
+【系統參數】
+  採樣時間 Ts: 0.001 s
+  路徑區間長度 pdl: 300 ms
+  頻率限制點數量 numFC: 14
+  FFT頻率上限: 12.57 rad/s
+  低頻限制點數: 3
+  X軸極點增益: 0.4352
+  Z軸極點增益: 0.4952
+
+【CNC參數】
+  Lq: 10
+
+【參考路徑資訊】
+  路徑總長度: 15000
+  路徑區間數: 50
+  路徑時間: 15.0 s
+
+【誤差統計】
+  RMS Error: 2.7026 μm
+  Max Error: 8.6160 μm
+  Mean Error: 1.5845 μm
+============================================================
+每步詳細狀況
+============================================================
+Step   | Status          | Freq (rad/s)         | Mag (dB)     | Model          
+------------------------------------------------------------
+0      | Solved          | 0                    | 0            | NO1_tracking   
+1      | Solved          | 0                    | 0            | NO1_tracking   
+2      | Infeasible      | 0                    | 0            | NO1_tracking   
+3      | Solved          | 0                    | 0            | NO1_tracking   
+4      | Solved          | 0                    | 0            | NO1_tracking   
+5      | Solved          | 0                    | 0            | NO1_tracking   
+6      | Solved          | 0                    | 0            | NO1_tracking   
+7      | Infeasible      | 0                    | 0            | NO1_tracking   
+8      | Infeasible      | 0                    | 0            | NO1_tracking   
+9      | Solved          | 0                    | 0            | NO1_tracking   
+10     | Infeasible      | 0                    | 0            | NO1_tracking   
+11     | Infeasible      | 0                    | 0            | NO1_tracking   
+12     | Solved          | 408.41               | -0.00068017  | NO1_tracking   
+13     | Solved          | 402.12               | -0.0021443   | NO2_resonance  
+14     | Solved          | 521.50               | -0.0010515   | NO2_resonance  
+15     | Solved          | 0                    | 0            | NO2_resonance  
+16     | Solved          | 0                    | 0            | NO2_resonance  
+17     | Solved          | 0                    | 0            | NO2_resonance  
+18     | Solved          | 0                    | 0            | NO2_resonance  
+19     | Solved          | 735.13               | 7.8374e-05   | NO2_resonance  
+20     | Solved          | 0                    | 0            | NO2_resonance  
+21     | Infeasible      | 0                    | 0            | NO2_resonance  
+22     | Solved          | 716.28               | -6.6942e-05  | NO2_resonance  
+23     | Solved          | 898.50               | 0.00010147   | NO2_resonance  
+24     | Solved          | 741.42               | -0.00030796  | NO2_resonance  
+25     | Solved          | 0                    | 0            | NO2_resonance  
+26     | Solved          | 766.55               | -0.00013063  | NO2_resonance  
+27     | Solved          | 0                    | 0            | NO2_resonance  
+28     | Solved          | 0                    | 0            | NO2_resonance  
+29     | Solved          | 747.70               | -0.00031232  | NO2_resonance  
+30     | Infeasible      | 810.53               | 0.00013532   | NO2_resonance  
+31     | Infeasible      | 0                    | 0            | NO2_resonance  
+32     | Solved          | 0                    | 0            | NO2_resonance  
+33     | Solved          | 0                    | 0            | NO2_resonance  
+34     | Solved          | 728.85               | 0.00067136   | NO2_resonance  
+35     | Solved          | 0                    | 0            | NO2_resonance  
+36     | Infeasible      | 0                    | 0            | NO2_resonance  
+37     | Solved          | 0                    | 0            | NO2_resonance  
+38     | Infeasible      | 0                    | 0            | NO2_resonance  
+39     | Solved          | 0                    | 0            | NO2_resonance  
+40     | semiSolved      | 408.41               | 0.0017558    | NO2_resonance  
+41     | semiSolved      | 0                    | 0            | NO2_resonance  
+42     | semiSolved      | 0                    | 0            | NO2_resonance  
+43     | semiSolved      | 0                    | 0            | NO2_resonance  
+44     | semiSolved      | 0                    | 0            | NO2_resonance  
+45     | Infeasible      | 0                    | 0            | NO2_resonance  
+46     | Infeasible      | 0                    | 0            | NO2_resonance  
+47     | semiSolved      | 0                    | 0            | NO2_resonance  
+48     | semiSolved      | 0                    | 0            | NO2_resonance  
+49     | semiSolved      | 0                    | 0            | NO2_resonance  
+
+============================================================
