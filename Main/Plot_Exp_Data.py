@@ -24,26 +24,71 @@ import CNC
 
 
 # ============================================================
-# 配置參數（單實驗分析）
+# 執行模式設定
+# ============================================================
+BATCH_MODE = True  # True = 批次處理（使用 BATCH_EXPERIMENTS）, False = 手動選擇
+
+# 手動模式設定（BATCH_MODE = False 時使用）
+SHOW_EVENT_LINES = True   # 設為 True 顯示所有事件線，False 則不顯示
+RESONANCE_TIME = 3        # 共振檢測時間（秒），設為 None 則不顯示此線
+
+# 批次處理配置（BATCH_MODE = True 時使用）
+# 格式: {
+#     'path': 資料夾路徑（相對於 ExperimentData 或絕對路徑）,
+#     'mode': 'single' 或 'multi',
+#     'show_events': True/False,
+#     'resonance_time': 秒數或 None
+# }
+BATCH_EXPERIMENTS = [
+    # === 單實驗 ===
+    {'path': 'test1-1', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
+    {'path': 'test1-2', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': 'test1-3', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': 'test2-1', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
+    {'path': 'test3-1', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': 'test4-1', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': 'test4-2', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': 'test5-1', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': 'test6-1模', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': 'test6-2模', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    
+    # === 雙模型模擬 ===
+    {'path': '雙模型模擬/BUE_0~1Hz_有共振', 'mode': 'single', 'show_events': True, 'resonance_time': 0},
+    {'path': '雙模型模擬/BUE_0~1Hz_無共振', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': '雙模型模擬/PRE_0~1Hz_有共振', 'mode': 'single', 'show_events': True, 'resonance_time': 0},
+    {'path': '雙模型模擬/PRE_0~1Hz_無共振', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    
+    # === 多實驗統計 ===
+    {'path': 'test1多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+    {'path': 'test2多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+    {'path': 'test4多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+    {'path': 'test6-1多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+    {'path': 'test6-2多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+]
+
+# ============================================================
+# 繪圖參數
 # ============================================================
 
-# Matplotlib 字體大小統一設定
+# 圖片尺寸 (寬, 高) - 需被16整除以相容影片編碼
+FIG_SIZE_SINGLE = (7.68, 5.76)    # 768x576
+FIG_SIZE_WIDE = (11.52, 5.76)     # 1152x576
+FIG_SIZE_MULTI = (10.24, 10.24)   # 1024x1024
+
+# 字體大小（圖片越小，字體相對越大）
+FONT_TITLE = 24    # 圖表標題
+FONT_LABEL = 20    # 座標軸標籤
+FONT_TICK = 18     # 刻度數字
+FONT_LEGEND = 18   # 圖例
+
+# 套用字體設定
 matplotlib.rcParams.update({
-    'axes.titlesize': 24,   # 圖表標題字體
-    'axes.labelsize': 20,   # 座標軸標籤字體
-    'xtick.labelsize': 18,  # X 軸刻度字體
-    'ytick.labelsize': 18,  # Y 軸刻度字體
-    'legend.fontsize': 18,  # 圖例字體
+    'axes.titlesize': FONT_TITLE,
+    'axes.labelsize': FONT_LABEL,
+    'xtick.labelsize': FONT_TICK,
+    'ytick.labelsize': FONT_TICK,
+    'legend.fontsize': FONT_LEGEND,
 })
-
-# 統一圖片尺寸 (寬, 高) - 需被16整除以相容影片編碼
-FIG_SIZE_SINGLE = (10.24, 7.68)   # 1024x768
-FIG_SIZE_WIDE = (14.4, 7.68)      # 1440x768
-FIG_SIZE_MULTI = (12.8, 12.8)     # 1280x1280
-
-# 性能指標圖事件標記線配置
-SHOW_EVENT_LINES = False # 設為 True 顯示所有事件線，False 則不顯示
-RESONANCE_TIME = 3        # 共振檢測時間（秒），設為 None 則不顯示此線
 
 
 # ============================================================
@@ -1248,19 +1293,105 @@ def process_multiple_experiments(folder_path):
     print(f"✓ 圖表已保存到: {output_folder}")
 
 
-def main():
-    path, is_folder = select_experiment_data()
+# ============================================================
+# 批次處理函數
+# ============================================================
+
+def get_full_path(path):
+    """將相對路徑轉換為完整路徑"""
+    if os.path.isabs(path):
+        return path
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    exp_data_dir = os.path.join(base_dir, '..', 'ExperimentData')
+    return os.path.normpath(os.path.join(exp_data_dir, path))
+
+
+def process_batch_experiment(config):
+    """處理單個批次配置"""
+    global SHOW_EVENT_LINES, RESONANCE_TIME
     
-    if not path:
-        print("未選擇檔案或文件夾")
+    path = get_full_path(config['path'])
+    mode = config['mode']
+    
+    print("\n" + "=" * 70)
+    print(f"處理: {config['path']}")
+    print(f"模式: {'單實驗' if mode == 'single' else '多實驗'}")
+    print(f"事件線: {config.get('show_events', True)}, 共振時間: {config.get('resonance_time', None)}")
+    print("=" * 70)
+    
+    if not os.path.exists(path):
+        print(f"❌ 路徑不存在: {path}")
+        return False
+    
+    # 暫存並修改全局設定
+    original_show = SHOW_EVENT_LINES
+    original_res = RESONANCE_TIME
+    SHOW_EVENT_LINES = config.get('show_events', True)
+    RESONANCE_TIME = config.get('resonance_time', None)
+    
+    try:
+        if mode == 'single':
+            npz_file = os.path.join(path, 'runtime_data.npz')
+            if not os.path.exists(npz_file):
+                npz_file = os.path.join(path, 'simulation_data.npz')
+            if not os.path.exists(npz_file):
+                print(f"❌ 找不到數據文件: {path}")
+                return False
+            process_single_experiment(npz_file)
+        elif mode == 'multi':
+            process_multiple_experiments(path)
+        else:
+            print(f"❌ 未知模式: {mode}")
+            return False
+        print(f"✓ 完成: {config['path']}")
+        return True
+    except Exception as e:
+        print(f"❌ 處理失敗: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    finally:
+        SHOW_EVENT_LINES = original_show
+        RESONANCE_TIME = original_res
+
+
+def run_batch():
+    """執行批次處理"""
+    if not BATCH_EXPERIMENTS:
+        print("\n⚠ BATCH_EXPERIMENTS 列表為空，請先在腳本中配置實驗資料夾。")
         return
     
-    if is_folder:
-        # 處理多個實驗數據（統計分析）
-        process_multiple_experiments(path)
+    print("=" * 70)
+    print("批次實驗數據可視化")
+    print("=" * 70)
+    print(f"\n共 {len(BATCH_EXPERIMENTS)} 個實驗待處理\n")
+    
+    success, fail = 0, 0
+    for i, config in enumerate(BATCH_EXPERIMENTS, 1):
+        print(f"\n[{i}/{len(BATCH_EXPERIMENTS)}] ", end="")
+        if process_batch_experiment(config):
+            success += 1
+        else:
+            fail += 1
+    
+    print("\n" + "=" * 70)
+    print(f"批次處理完成 - 成功: {success}, 失敗: {fail}")
+    print("=" * 70)
+
+
+def main():
+    # 根據 BATCH_MODE 決定執行模式
+    if BATCH_MODE:
+        run_batch()
     else:
-        # 處理單個實驗數據（詳細分析）
-        process_single_experiment(path)
+        path, is_folder = select_experiment_data()
+        if not path:
+            print("未選擇檔案或文件夾")
+            return
+        if is_folder:
+            process_multiple_experiments(path)
+        else:
+            process_single_experiment(path)
 
 
 if __name__ == "__main__":
