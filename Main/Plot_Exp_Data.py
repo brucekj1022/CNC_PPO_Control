@@ -29,12 +29,17 @@ import CNC
 
 # Matplotlib 字體大小統一設定
 matplotlib.rcParams.update({
-    'axes.titlesize': 18,   # 圖表標題字體
-    'axes.labelsize': 16,   # 座標軸標籤字體
-    'xtick.labelsize': 14,  # X 軸刻度字體
-    'ytick.labelsize': 14,  # Y 軸刻度字體
-    'legend.fontsize': 16,  # 圖例字體
+    'axes.titlesize': 24,   # 圖表標題字體
+    'axes.labelsize': 20,   # 座標軸標籤字體
+    'xtick.labelsize': 18,  # X 軸刻度字體
+    'ytick.labelsize': 18,  # Y 軸刻度字體
+    'legend.fontsize': 18,  # 圖例字體
 })
+
+# 統一圖片尺寸 (寬, 高) - 需被16整除以相容影片編碼
+FIG_SIZE_SINGLE = (10.24, 7.68)   # 1024x768
+FIG_SIZE_WIDE = (14.4, 7.68)      # 1440x768
+FIG_SIZE_MULTI = (12.8, 12.8)     # 1280x1280
 
 # 性能指標圖事件標記線配置
 SHOW_EVENT_LINES = False # 設為 True 顯示所有事件線，False 則不顯示
@@ -74,7 +79,7 @@ def plot_error_fft_frame(step, ek, Ts, output, Wgc=None, folder='fft_frames'):
     peaks_position, _ = scipy.signal.find_peaks(eFTy)
     
     # 繪圖
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=FIG_SIZE_SINGLE)
     
     # 上圖：時域誤差
     time_axis = np.arange(len(ek)) * Ts * 1000  # 轉換為 ms
@@ -220,7 +225,7 @@ class PlotExporter:
 
     def plot_frame(self, CC, plant, FC, manual_add_FC):
         """繪製單張 Bode 圖 + FC 點，並儲存圖片"""
-        plt.figure(figsize=(12, 6.08))
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         OLoop = ctrl.minreal(ctrl.ss2tf(CC * plant), tol=1e-3, verbose=False)
         mag, _, oma = ctrl.bode(OLoop, dB=True, omega_limits=[1e-2, 3e3], plot=False)
         # 畫OLoop
@@ -272,7 +277,7 @@ class PlotExporter:
         
         time = np.arange(len(combined_data)) * Ts
         
-        plt.figure(figsize=(12, 6.08))  # 與 margin 圖保持一致
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         plt.plot(time, combined_data, linewidth=1.5)
         
         if not np.any(np.abs(combined_data) > 30):
@@ -361,7 +366,7 @@ class PlotExporter:
             time_points.append(step * time_per_step)
 
         # 繪圖
-        fig, axes = plt.subplots(4, 1, figsize=(12, 10))
+        fig, axes = plt.subplots(4, 1, figsize=FIG_SIZE_MULTI)
          
         # GM 圖
         axes[0].plot(time_points, GM_list, 'b-', linewidth=2)
@@ -734,7 +739,7 @@ def plot_reference_path(data, experiment_folder):
     t = np.arange(0, len(path) * Ts, Ts)
     
     inputdata_plot = np.column_stack((t, path))
-    plt.figure(figsize=(14, 6.08))
+    plt.figure(figsize=FIG_SIZE_WIDE)
     plt.plot(inputdata_plot[:, 0], inputdata_plot[:, 1])
     plt.title('Path')
     plt.xlabel('Time (s)')
@@ -1007,7 +1012,7 @@ def plot_error_statistics(aligned_errors, mean_error, std_error,
     """繪製誤差統計圖"""
     time = np.arange(len(mean_error)) * Ts
     
-    plt.figure(figsize=(12, 6.08))  # 與 margin 圖保持一致
+    plt.figure(figsize=FIG_SIZE_SINGLE)
     
     if show_individual:
         for i, error in enumerate(aligned_errors):
@@ -1042,7 +1047,7 @@ def plot_margins_statistics(aligned_GM, aligned_PM, aligned_Wgc, aligned_Slope,
     n_steps = aligned_GM.shape[1]
     time_points = np.arange(n_steps) * (pdl * Ts)
     
-    fig, axes = plt.subplots(4, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(4, 1, figsize=FIG_SIZE_MULTI)
     
     # 使用通用函數繪製4個子圖
     _plot_statistics_subplot(axes[0], time_points, aligned_GM, 'Gain Margin (dB)',
