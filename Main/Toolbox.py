@@ -57,11 +57,33 @@ plt.show()
 # ============================================================
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import control as ctrl
 import scipy
 import scipy.signal
+import tkinter as tk
+from tkinter import filedialog
+import os
 import CNC
+
+# ============================================================
+# 繪圖參數（統一標準，與 Plot_Exp_Data.py 一致）
+# ============================================================
+
+# 圖片尺寸 (寬, 高) - 需被16整除以相容影片編碼
+FIG_SIZE_SINGLE = (7.68, 5.76)    # 768x576
+FIG_SIZE_WIDE = (11.52, 5.76)     # 1152x576
+FIG_SIZE_MULTI = (10.24, 10.24)   # 1024x1024
+
+# 字體大小設定
+matplotlib.rcParams.update({
+    'axes.titlesize': 24,     # 圖表標題
+    'axes.labelsize': 20,     # 座標軸標籤
+    'xtick.labelsize': 18,    # 刻度數字
+    'ytick.labelsize': 18,    # 刻度數字
+    'legend.fontsize': 18,    # 圖例
+})
 
 # ============================================================
 # 功能函數
@@ -77,45 +99,45 @@ def plot_id_uncertainty_bode():
     omega = np.logspace(np.log10(0.1), np.log10(3000), num=5000)
 
     # 大小波德圖
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=FIG_SIZE_MULTI)
 
     mag1, phase1, omega1 = ctrl.bode(ID_Plant['v2p'], omega, dB=True, plot=False)
     plt.subplot(2, 1, 1)
     plt.semilogx(omega1, 20 * np.log10(mag1))
-    plt.title('ID model', fontsize=16)
-    plt.xlabel('Frequency [rad/s]', fontsize=14)
-    plt.ylabel('Magnitude [dB]', fontsize=14)
+    plt.title('ID model')
+    plt.xlabel('Frequency [rad/s]')
+    plt.ylabel('Magnitude [dB]')
     plt.grid(True, which='both', linestyle='--')
 
     mag2, phase2, omega2 = ctrl.bode(uncertainty_Plant['v2p'], omega, dB=True, plot=False)
     plt.subplot(2, 1, 2)
     plt.semilogx(omega2, 20 * np.log10(mag2))
-    plt.title('Uncertainty model', fontsize=16)
-    plt.xlabel('Frequency [rad/s]', fontsize=14)
-    plt.ylabel('Magnitude [dB]', fontsize=14)
+    plt.title('Uncertainty model')
+    plt.xlabel('Frequency [rad/s]')
+    plt.ylabel('Magnitude [dB]')
     plt.grid(True, which='both', linestyle='--')
 
-    plt.subplots_adjust(hspace=0.5)
+    plt.tight_layout()
     plt.show()
 
     # 相位波德圖
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=FIG_SIZE_MULTI)
 
     plt.subplot(2, 1, 1)
     plt.semilogx(omega1, phase1 * (180 / np.pi))
-    plt.title('ID model - Phase', fontsize=16)
-    plt.xlabel('Frequency [rad/s]', fontsize=14)
-    plt.ylabel('Phase [degrees]', fontsize=14)
+    plt.title('ID model - Phase')
+    plt.xlabel('Frequency [rad/s]')
+    plt.ylabel('Phase [degrees]')
     plt.grid(True, which='both', linestyle='--')
 
     plt.subplot(2, 1, 2)
     plt.semilogx(omega2, phase2 * (180 / np.pi))
-    plt.title('Uncertainty model - Phase', fontsize=16)
-    plt.xlabel('Frequency [rad/s]', fontsize=14)
-    plt.ylabel('Phase [degrees]', fontsize=14)
+    plt.title('Uncertainty model - Phase')
+    plt.xlabel('Frequency [rad/s]')
+    plt.ylabel('Phase [degrees]')
     plt.grid(True, which='both', linestyle='--')
 
-    plt.subplots_adjust(hspace=0.5)
+    plt.tight_layout()
     plt.show()
 
 
@@ -124,7 +146,7 @@ def plot_random_resonance_plant():
     Ts = 0.001
     model_x = CNC.CNCModel('x', Ts)
     
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=FIG_SIZE_SINGLE)
     plant = model_x.ID_Plant()
     mag, _, oma = ctrl.bode(plant['v2p'], dB=True, omega_limits=[1e-2, 3e3], plot=False)
     plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2, label='ID Plant')
@@ -138,11 +160,11 @@ def plot_random_resonance_plant():
     plt.xscale('log')
     plt.xlim(1, 1e4)
     plt.ylim(-70, 70)
-    plt.xlabel("Frequency (rad/s)", size=20)
-    plt.ylabel("Magnitude (dB)", size=20)
-    plt.title("Uncertainty Plant Ensemble (100 samples)", size=24)
-    plt.tick_params(axis='both', labelsize=16)
-    plt.legend(fontsize=14)
+    plt.xlabel("Frequency (rad/s)")
+    plt.ylabel("Magnitude (dB)")
+    plt.title("Uncertainty Plant Ensemble (100 samples)")
+    plt.legend()
+    plt.tight_layout()
     plt.show()
 
 
@@ -155,13 +177,13 @@ def plot_chirp_input():
 
     inputdata = scipy.signal.chirp(t, f0=0, f1=50, t1=path_time, method='linear', phi=-90) * Magnitude
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=FIG_SIZE_SINGLE)
     plt.plot(t, inputdata)
-    plt.title('Chirp Signal (0-50 Hz)', fontsize=20)
-    plt.xlabel('Time (s)', fontsize=16)
-    plt.ylabel('Magnitude (rpm)', fontsize=16)
-    plt.tick_params(axis='both', labelsize=14)
+    plt.title('Chirp Signal (0-50 Hz)')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Magnitude (rpm)')
     plt.grid(True)
+    plt.tight_layout()
     plt.show()
 
 
@@ -206,7 +228,7 @@ def plot_resonance_bounds():
     gain_lower_dB = mag_ID_bounds + 20 * np.log10(gain_lower)
     gain_upper_dB = mag_ID_bounds + 20 * np.log10(gain_upper)
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=FIG_SIZE_SINGLE)
     plt.semilogx(omega_out.flatten(), mag_ID_dB, 'b-', linewidth=1.5, label='Nominal Plant')
     plt.semilogx(omega_bounds, gain_upper_dB, 'r:', linewidth=2, label='Upper Bound')
     plt.semilogx(omega_bounds, gain_lower_dB, 'g--', linewidth=1.5, label='Lower Bound')
@@ -214,14 +236,13 @@ def plot_resonance_bounds():
     plt.axvline(x=300, color='k', linestyle='--', linewidth=1, alpha=0.7)
     plt.axvline(x=1000, color='k', linestyle='--', linewidth=1, alpha=0.7)
 
-    plt.xlabel('Frequency (rad/s)', fontsize=16)
-    plt.ylabel('Magnitude (dB)', fontsize=16)
-    plt.title('Random Resonance Peak Bounds', fontsize=20)
-    plt.legend(loc='best', fontsize=14)
+    plt.xlabel('Frequency (rad/s)')
+    plt.ylabel('Magnitude (dB)')
+    plt.title('Random Resonance Peak Bounds')
+    plt.legend(loc='best')
     plt.grid(True, which='both', alpha=0.3)
     plt.xlim([100, omega_nyquist])
     plt.ylim([-40, 40])
-    plt.tick_params(axis='both', labelsize=14)
     plt.tight_layout()
     plt.show()
 
@@ -292,14 +313,13 @@ def dynamic_fft_mask_animation():
             mask_start = step * pdl * Ts
             mask_end = (step * pdl + FFT_mask) * Ts
         
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         t = np.arange(0, len(path) * Ts, Ts)
         plt.plot(t, path, zorder=1)
         plt.axvspan(mask_start, mask_end, color='red', alpha=0.3, label="FFT Mask Region", zorder=2)
-        plt.xlabel("Time", fontsize=40)
-        plt.ylabel("Magnitude", fontsize=40)
-        plt.title(f'Dynamic Mask Step {step + 1}', fontsize=40)
-        plt.tick_params(axis='both', labelsize=32)
+        plt.xlabel("Time")
+        plt.ylabel("Magnitude")
+        plt.title(f'Dynamic Mask Step {step + 1}')
         plt.tight_layout()
         plt.savefig(f'frames/frame_{step:03d}.png')
         plt.clf()
@@ -314,12 +334,26 @@ def dynamic_fft_mask_animation():
 
 def plot_experiment_openloop():
     """載入實驗數據並繪製每個Step開迴路波德圖，主要查看OLoop的隨機性"""
-    # 預設路徑
-    default_path = '../ExperimentData/雙模型模擬/PRE_0~1Hz_無共振/simulation_data.npz'
+    # 彈出檔案選擇視窗
+    root = tk.Tk()
+    root.withdraw()
     
-    print(f"預設數據路徑: {default_path}")
-    user_path = input("輸入新路徑或按 Enter 使用預設: ").strip()
-    data_path = user_path if user_path else default_path
+    initial_dir = os.path.join("..", "ExperimentData")
+    if not os.path.exists(initial_dir):
+        initial_dir = ".."
+    
+    data_path = filedialog.askopenfilename(
+        title="選擇實驗數據檔案 (runtime_data.npz 或 simulation_data.npz)",
+        initialdir=initial_dir,
+        filetypes=[("NumPy檔案", "*.npz"), ("所有檔案", "*.*")]
+    )
+    root.destroy()
+    
+    if not data_path:
+        print("未選擇檔案")
+        return
+    
+    print(f"選擇的檔案: {data_path}")
     
     try:
         data = np.load(data_path, allow_pickle=True)
@@ -331,7 +365,7 @@ def plot_experiment_openloop():
         # 顏色漸變 (藍→紅)
         colors = plt.cm.coolwarm(np.linspace(0, 1, actual_steps))
         
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         
         for step in range(actual_steps):
             CC = CC_list[step]
@@ -343,10 +377,10 @@ def plot_experiment_openloop():
         plt.xscale('log')
         plt.xlim(1, 1e4)
         plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)", size=28)
-        plt.ylabel("Magnitude (dB)", size=28)
-        plt.title("Open Loop Bode Plot", size=36)
-        plt.tick_params(axis='both', labelsize=20)
+        plt.xlabel("Frequency (rad/s)")
+        plt.ylabel("Magnitude (dB)")
+        plt.title("Open Loop Bode Plot")
+        plt.tight_layout()
         plt.show()
     except FileNotFoundError:
         print(f"找不到檔案: {data_path}")
@@ -451,20 +485,21 @@ def generate_test_controller():
     plot_choice = input("\n是否繪製驗證圖? (y/n) [預設 y]: ").strip().lower()
     if plot_choice != 'n':
         # 1. 中央控制器
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         mag_c, _, oma_c = ctrl.bode(ctrl.ss2tf(CC_central), dB=True, omega_limits=[1e-2, 3e3], plot=False)
         plt.plot(oma_c, 20*np.log10(mag_c), color='b', linewidth=2)
         plt.grid()
         plt.xscale('log')
         plt.xlim(1, 1e4)
         plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)", size=14)
-        plt.ylabel("Magnitude (dB)", size=14)
-        plt.title("Central Controller", size=18)
+        plt.xlabel("Frequency (rad/s)")
+        plt.ylabel("Magnitude (dB)")
+        plt.title("Central Controller")
+        plt.tight_layout()
         plt.show()
         
         # 2. 中央控制器 + ID_Plant (開迴路)
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         OLoop_central = ctrl.minreal(ctrl.ss2tf(CC_central * ID_Plant['v2p']), tol=1e-3, verbose=False)
         mag_oc, _, oma_oc = ctrl.bode(OLoop_central, dB=True, omega_limits=[1e-2, 3e3], plot=False)
         plt.plot(oma_oc, 20*np.log10(mag_oc), color='b', linewidth=2)
@@ -473,13 +508,14 @@ def generate_test_controller():
         plt.xscale('log')
         plt.xlim(1, 1e4)
         plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)", size=14)
-        plt.ylabel("Magnitude (dB)", size=14)
-        plt.title("Central Controller + ID_Plant (Open Loop)", size=18)
+        plt.xlabel("Frequency (rad/s)")
+        plt.ylabel("Magnitude (dB)")
+        plt.title("Central Controller + ID_Plant (Open Loop)")
+        plt.tight_layout()
         plt.show()
         
         # 3. 新測試控制器 (中央控制器 + 共振)
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         mag_r, _, oma_r = ctrl.bode(CC_tf, dB=True, omega_limits=[1e-2, 3e3], plot=False)
         plt.plot(oma_r, 20*np.log10(mag_r), color='r', linewidth=2)
         plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7, label=f'Resonance @ {omega} rad/s')
@@ -487,14 +523,15 @@ def generate_test_controller():
         plt.xscale('log')
         plt.xlim(1, 1e4)
         plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)", size=14)
-        plt.ylabel("Magnitude (dB)", size=14)
-        plt.title("Test Controller (Central + Resonance)", size=18)
+        plt.xlabel("Frequency (rad/s)")
+        plt.ylabel("Magnitude (dB)")
+        plt.title("Test Controller (Central + Resonance)")
         plt.legend()
+        plt.tight_layout()
         plt.show()
         
         # 4. 新測試控制器 + ID_Plant (開迴路)
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         OLoop_resonance = ctrl.minreal(ctrl.ss2tf(CC_with_resonance * ID_Plant['v2p']), tol=1e-3, verbose=False)
         mag_or, _, oma_or = ctrl.bode(OLoop_resonance, dB=True, omega_limits=[1e-2, 3e3], plot=False)
         plt.plot(oma_or, 20*np.log10(mag_or), color='r', linewidth=2)
@@ -504,10 +541,11 @@ def generate_test_controller():
         plt.xscale('log')
         plt.xlim(1, 1e4)
         plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)", size=14)
-        plt.ylabel("Magnitude (dB)", size=14)
-        plt.title("Test Controller + ID_Plant (Open Loop)", size=18)
+        plt.xlabel("Frequency (rad/s)")
+        plt.ylabel("Magnitude (dB)")
+        plt.title("Test Controller + ID_Plant (Open Loop)")
         plt.legend()
+        plt.tight_layout()
         plt.show()
 
 

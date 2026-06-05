@@ -75,19 +75,13 @@ FIG_SIZE_SINGLE = (7.68, 5.76)    # 768x576
 FIG_SIZE_WIDE = (11.52, 5.76)     # 1152x576
 FIG_SIZE_MULTI = (10.24, 10.24)   # 1024x1024
 
-# 字體大小（圖片越小，字體相對越大）
-FONT_TITLE = 24    # 圖表標題
-FONT_LABEL = 20    # 座標軸標籤
-FONT_TICK = 18     # 刻度數字
-FONT_LEGEND = 18   # 圖例
-
-# 套用字體設定
+# 字體大小設定
 matplotlib.rcParams.update({
-    'axes.titlesize': FONT_TITLE,
-    'axes.labelsize': FONT_LABEL,
-    'xtick.labelsize': FONT_TICK,
-    'ytick.labelsize': FONT_TICK,
-    'legend.fontsize': FONT_LEGEND,
+    'axes.titlesize': 24,     # 圖表標題
+    'axes.labelsize': 20,     # 座標軸標籤
+    'xtick.labelsize': 18,    # 刻度數字
+    'ytick.labelsize': 18,    # 刻度數字
+    'legend.fontsize': 18,    # 圖例
 })
 
 
@@ -784,7 +778,7 @@ def plot_reference_path(data, experiment_folder):
     t = np.arange(0, len(path) * Ts, Ts)
     
     inputdata_plot = np.column_stack((t, path))
-    plt.figure(figsize=FIG_SIZE_WIDE)
+    plt.figure(figsize=FIG_SIZE_SINGLE)
     plt.plot(inputdata_plot[:, 0], inputdata_plot[:, 1])
     plt.title('Path')
     plt.xlabel('Time (s)')
