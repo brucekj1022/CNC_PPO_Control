@@ -24,7 +24,7 @@ if use_switch_model:
     read_file_name1='Modelunc1.pth'  # 追蹤模型
     read_file_name2='Modelran1.pth'  # 共振模型
 else:
-    read_file_name='Modelunc1.pth'
+    read_file_name='Modelran1.pth'
 #endregion
 
 ######   參數區域    ######
@@ -246,7 +246,7 @@ CCnub = [8885.431062041,       -24637.015400412543,     31725.764043065406,
 CC_shaoping = ctrl.tf2ss(ctrl.TransferFunction(CCnub[:8], CCnub[8:], Ts))
 
 #實驗設定
-Plant=model_x.ID_Plant()
+Plant=model_x.test_Plant()
 path=testpath
 path_index=0
 num_path_district=int((len(path)-path_index)/pdl)
