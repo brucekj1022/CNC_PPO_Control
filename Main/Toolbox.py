@@ -354,6 +354,163 @@ def plot_experiment_openloop():
         print(f"載入失敗: {e}")
 
 
+def generate_test_controller():
+    """產生測試控制器：中央控制器 + 二階共振系統，用於 Runtime.py"""
+    import argparse
+    
+    np.set_printoptions(precision=15, suppress=True)
+    
+    # CNC 參數
+    Ts = 0.001
+    x_polegain = 0.4352
+    numFC = 14
+    num_low_freq_FC = 3
+    pdl = 300
+    
+    # 預設共振參數
+    print("=" * 60)
+    print("測試控制器產生器")
+    print("=" * 60)
+    print("\n共振參數設定:")
+    
+    omega_input = input("  共振頻率 omega (rad/s) [預設 800]: ").strip()
+    omega = int(omega_input) if omega_input else 800
+    
+    zeta_input = input("  阻尼比 zeta [預設 0.05]: ").strip()
+    zeta = float(zeta_input) if zeta_input else 0.05
+    
+    gain_input = input("  峰值增益 gain (分子zeta倍數) [預設 12]: ").strip()
+    gain = int(gain_input) if gain_input else 12
+    
+    # 創建 argparse namespace
+    class CNC_parameter:
+        Lq = 10
+        w_sumError = 1e+3
+        w_FCfreq = 4e+3
+        w_Wgc = 1e+3
+        w_earlyTrain = 5e-3
+    
+    # 創建實例
+    model_x = CNC.CNCModel('x', Ts)
+    path_model = CNC.PathModel(Ts)
+    ID_Plant = model_x.ID_Plant()
+    testpath = path_model.test_path()
+    
+    costfunction_x = CNC.Costfunction(CNC_parameter, x_polegain, ID_Plant, testpath, pdl, numFC, num_low_freq_FC)
+    
+    # ===== 1. 取得中央控制器 (Q=0) =====
+    CC_central = costfunction_x.LFTExpandedSS(np.zeros((CNC_parameter.Lq, 1)))
+    print("\n中央控制器 CC_central 已產生")
+    
+    # ===== 2. 設定共振參數並創建二階系統 =====
+    # 二階共振系統 (連續時間)
+    # H(s) = (s^2 + gain*zeta*omega*s + omega^2) / (s^2 + 2*zeta*omega*s + omega^2)
+    resonance_tf_continuous = ctrl.TransferFunction(
+        [1, gain * zeta * omega, omega**2], 
+        [1, 2 * zeta * omega, omega**2]
+    )
+    # 離散化
+    resonance_tf = ctrl.sample_system(resonance_tf_continuous, Ts)
+    
+    print(f"\n共振參數: omega={omega} rad/s, zeta={zeta}, gain={gain}")
+    print(f"共振二階系統 (離散):")
+    print(f"  分子: {resonance_tf.num[0][0]}")
+    print(f"  分母: {resonance_tf.den[0][0]}")
+    
+    # ===== 3. 串接控制器 =====
+    CC_with_resonance = CC_central * resonance_tf
+    print("\n中央控制器已串接共振系統")
+    
+    # ===== 4. 轉換為傳遞函數並輸出係數 =====
+    CC_tf = ctrl.ss2tf(CC_with_resonance)
+    num = np.array(CC_tf.num[0][0])
+    den = np.array(CC_tf.den[0][0])
+    
+    print("\n" + "=" * 60)
+    print("串接後控制器的傳遞函數係數:")
+    print(f"分子 (num, {len(num)}個): {num}")
+    print(f"分母 (den, {len(den)}個): {den}")
+    
+    # 對齊長度 (如果需要)
+    max_len = max(len(num), len(den))
+    num_padded = np.pad(num, (0, max_len - len(num)))
+    den_padded = np.pad(den, (0, max_len - len(den)))
+    
+    # 合併成 Runtime.py 格式
+    X_resonance_new = np.concatenate([num_padded, den_padded])
+    
+    print("\n" + "=" * 60)
+    print("複製以下內容到 Runtime.py:")
+    print("=" * 60)
+    print(f"#X軸本身機台共振測試控制器(新) omega={omega}, zeta={zeta}, gain={gain}")
+    print(f"X_resonance = {X_resonance_new.tolist()}")
+    print(f"CC_X_resonance = ctrl.tf2ss(ctrl.TransferFunction(X_resonance[:{max_len}], X_resonance[{max_len}:], Ts))")
+    print("=" * 60)
+    
+    # ===== 5. 詢問是否繪圖 =====
+    plot_choice = input("\n是否繪製驗證圖? (y/n) [預設 y]: ").strip().lower()
+    if plot_choice != 'n':
+        # 1. 中央控制器
+        plt.figure(figsize=(12, 6))
+        mag_c, _, oma_c = ctrl.bode(ctrl.ss2tf(CC_central), dB=True, omega_limits=[1e-2, 3e3], plot=False)
+        plt.plot(oma_c, 20*np.log10(mag_c), color='b', linewidth=2)
+        plt.grid()
+        plt.xscale('log')
+        plt.xlim(1, 1e4)
+        plt.ylim(-70, 70)
+        plt.xlabel("Frequency (rad/s)", size=14)
+        plt.ylabel("Magnitude (dB)", size=14)
+        plt.title("Central Controller", size=18)
+        plt.show()
+        
+        # 2. 中央控制器 + ID_Plant (開迴路)
+        plt.figure(figsize=(12, 6))
+        OLoop_central = ctrl.minreal(ctrl.ss2tf(CC_central * ID_Plant['v2p']), tol=1e-3, verbose=False)
+        mag_oc, _, oma_oc = ctrl.bode(OLoop_central, dB=True, omega_limits=[1e-2, 3e3], plot=False)
+        plt.plot(oma_oc, 20*np.log10(mag_oc), color='b', linewidth=2)
+        plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
+        plt.grid()
+        plt.xscale('log')
+        plt.xlim(1, 1e4)
+        plt.ylim(-70, 70)
+        plt.xlabel("Frequency (rad/s)", size=14)
+        plt.ylabel("Magnitude (dB)", size=14)
+        plt.title("Central Controller + ID_Plant (Open Loop)", size=18)
+        plt.show()
+        
+        # 3. 新測試控制器 (中央控制器 + 共振)
+        plt.figure(figsize=(12, 6))
+        mag_r, _, oma_r = ctrl.bode(CC_tf, dB=True, omega_limits=[1e-2, 3e3], plot=False)
+        plt.plot(oma_r, 20*np.log10(mag_r), color='r', linewidth=2)
+        plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7, label=f'Resonance @ {omega} rad/s')
+        plt.grid()
+        plt.xscale('log')
+        plt.xlim(1, 1e4)
+        plt.ylim(-70, 70)
+        plt.xlabel("Frequency (rad/s)", size=14)
+        plt.ylabel("Magnitude (dB)", size=14)
+        plt.title("Test Controller (Central + Resonance)", size=18)
+        plt.legend()
+        plt.show()
+        
+        # 4. 新測試控制器 + ID_Plant (開迴路)
+        plt.figure(figsize=(12, 6))
+        OLoop_resonance = ctrl.minreal(ctrl.ss2tf(CC_with_resonance * ID_Plant['v2p']), tol=1e-3, verbose=False)
+        mag_or, _, oma_or = ctrl.bode(OLoop_resonance, dB=True, omega_limits=[1e-2, 3e3], plot=False)
+        plt.plot(oma_or, 20*np.log10(mag_or), color='r', linewidth=2)
+        plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
+        plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7, label=f'Resonance @ {omega} rad/s')
+        plt.grid()
+        plt.xscale('log')
+        plt.xlim(1, 1e4)
+        plt.ylim(-70, 70)
+        plt.xlabel("Frequency (rad/s)", size=14)
+        plt.ylabel("Magnitude (dB)", size=14)
+        plt.title("Test Controller + ID_Plant (Open Loop)", size=18)
+        plt.legend()
+        plt.show()
+
+
 # ============================================================
 # 主選單
 # ============================================================
@@ -366,6 +523,7 @@ MENU = {
     '5': ('隨機共振峰值上下界', plot_resonance_bounds),
     '6': ('動態FFT遮罩測試（產生動畫）', dynamic_fft_mask_animation),
     '7': ('載入實驗數據繪製開迴路波德圖', plot_experiment_openloop),
+    '8': ('產生測試控制器（中央控制器+共振）', generate_test_controller),
 }
 
 
