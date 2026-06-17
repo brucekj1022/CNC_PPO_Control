@@ -26,11 +26,9 @@ cd Main
 python Training.py     # 離線 PPO 訓練（讀 ../Model/*.pth，每 100 輪存檔）
 python Simulation.py   # 離線閉迴路模擬（用 PRE_Plant 等模型，輸出 simulation_data.npz）
 python Runtime.py      # 上機：TCP server 等 LabVIEW/cRIO 連線，每步收 ek、回傳 CC 係數
-python Toolbox.py      # 互動式分析選單（波德圖、極點、共振、路徑、產生測試控制器）
+python Toolbox.py      # 工具選單（波德圖、極點、共振、路徑、共振頻譜、訓練 Return 曲線）
 python pc_server.py    # 獨立 TCP 連線測試（固定回傳一組控制器係數）
 python Plot_Exp_Data.py  # 視覺化 runtime_data.npz（單一或批次統計）
-python Plot_return.py    # 畫訓練 reward 曲線
-python Plot_Full_FFT.py  # 誤差頻譜分析
 ```
 
 ## 相依套件

@@ -796,6 +796,125 @@ def plot_resonance_spectrum():
     plt.show()
 
 
+def plot_training_return():
+    """載入模型檔案繪製訓練 reward 曲線（可選全部或單一模型）"""
+    import warnings
+    import torch
+    from tkinter import messagebox
+
+    MODEL_DIR = "../Model"
+    MODEL_EXTENSIONS = (".pth", ".pt")
+
+    def load_checkpoint(file_path):
+        try:
+            warnings.filterwarnings("ignore", category=FutureWarning)
+            warnings.filterwarnings("ignore", category=UserWarning)
+            return torch.load(file_path, map_location=torch.device('cpu'))
+        except FileNotFoundError:
+            print(f"找不到 Model 檔案: {file_path}")
+        except Exception as err:
+            print(f"載入 Model 失敗: {err}")
+        return None
+
+    def combine_rewards(checkpoint):
+        """從 checkpoint 取出所有 iteration 的 reward 並依序串接"""
+        iterations = []
+        for key, data in checkpoint.items():
+            if not isinstance(key, str) or not key.startswith('iteration:'):
+                continue
+            try:
+                iteration = int(key.split(':', 1)[1])
+            except ValueError:
+                continue
+            iterations.append((iteration, data))
+        iterations.sort(key=lambda item: item[0])
+
+        segments = []
+        for _, data in iterations:
+            rewards = data.get('reward') if isinstance(data, dict) else None
+            if rewards is None or len(rewards) == 0:
+                continue
+            segments.append(np.asarray(rewards, dtype=float))
+        if not segments:
+            return None
+        return np.concatenate(segments)
+
+    def collect(display_name, file_path):
+        checkpoint = load_checkpoint(file_path)
+        if not checkpoint:
+            return None
+        combined = combine_rewards(checkpoint)
+        if combined is None or combined.size == 0:
+            print(f"{display_name} 沒有可用的 reward 資料")
+            return None
+        return display_name, combined
+
+    def plot_models(model_reward_list):
+        if not model_reward_list:
+            print("沒有可繪製的模型資料")
+            return
+        num_models = len(model_reward_list)
+        fig_height = max(3, 2.5 * num_models)
+        fig, axes = plt.subplots(num_models, 1, figsize=(10, fig_height), sharex=False)
+        if num_models == 1:
+            axes = [axes]
+        for ax, (display_name, rewards) in zip(axes, model_reward_list):
+            ax.plot(np.arange(len(rewards)), rewards, color='b', linewidth=1.2)
+            ax.set_ylim(bottom=-100)
+            ax.set_title(display_name, loc='left')
+            ax.set_ylabel('Reward')
+            ax.grid(True, alpha=0.3)
+        axes[-1].set_xlabel('Step')
+        fig.suptitle('Actor Return')
+        fig.tight_layout()
+        plt.show()
+
+    # === 選擇模式：全部模型 或 單一模型 ===
+    base_dir = os.path.join('.', MODEL_DIR)
+    print("\n選擇繪製範圍:")
+    print("  [1] Model 資料夾內所有模型")
+    print("  [2] 單一模型 (彈窗選檔)")
+    print("  [b] 返回")
+    mode_choice = input("請選擇 [預設 1]: ").strip().lower()
+    if mode_choice == 'b':
+        return
+
+    if mode_choice == '2':
+        root = tk.Tk()
+        root.withdraw()
+        initial_dir = base_dir if os.path.isdir(base_dir) else '.'
+        file_path = filedialog.askopenfilename(
+            title="選擇模型檔案",
+            initialdir=initial_dir,
+            filetypes=[("Torch Model", "*.pth *.pt"), ("所有檔案", "*.*")]
+        )
+        root.destroy()
+        if not file_path:
+            print("未選擇模型")
+            return
+        result = collect(os.path.basename(file_path), file_path)
+        if result:
+            plot_models([result])
+    else:
+        if not os.path.isdir(base_dir):
+            print(f"找不到 Model 資料夾: {base_dir}")
+            return
+        model_files = [name for name in sorted(os.listdir(base_dir))
+                       if name.lower().endswith(MODEL_EXTENSIONS)]
+        if not model_files:
+            print("Model 資料夾內找不到可用的模型檔案")
+            return
+        collected = []
+        for idx, name in enumerate(model_files, start=1):
+            print(f"[{idx}/{len(model_files)}] {name}")
+            result = collect(name, os.path.join(base_dir, name))
+            if result:
+                collected.append(result)
+        if collected:
+            plot_models(collected)
+            print(f"繪製完成：{', '.join(name for name, _ in collected)}")
+
+
 # ============================================================
 # 主選單
 # ============================================================
@@ -808,6 +927,7 @@ MENU = {
     '5': ('載入實驗數據繪製開迴路波德圖', plot_experiment_openloop),
     '6': ('載入實驗數據繪製閉迴路極點圖', plot_experiment_OLoop_poles),
     '7': ('載入實驗數據機台共振頻譜分析', plot_resonance_spectrum),
+    '8': ('載入模型繪製訓練 Return 曲線', plot_training_return),
 }
 
 
