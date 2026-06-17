@@ -13,7 +13,7 @@ OLoop = ctrl.minreal(ctrl.ss2tf(CC * Plant['v2p']), tol=1e-3, verbose=False)
 mag, _, oma = ctrl.bode(OLoop, dB=True, omega_limits=[1e-2, 3e3], plot=False)
 plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2)
 for i in range(100):
-    Plant=model_x.uncertainty_Plant()
+    Plant=model_x.BUE_Plant()
     OLoop = ctrl.minreal(ctrl.ss2tf(CC * Plant['v2p']), tol=1e-3, verbose=False)
     mag, _, oma = ctrl.bode(OLoop, dB=True, omega_limits=[1e-2, 3e3], plot=False)
     plt.plot(oma, 20 * np.log10(mag), color='r', linewidth=0.3)
@@ -68,7 +68,7 @@ import os
 import CNC
 
 # ============================================================
-# 繪圖參數（統一標準，與 Plot_Exp_Data.py 一致）
+# 繪圖參數(統一標準，與 Plot_Exp_Data.py 一致)
 # ============================================================
 
 # 圖片尺寸 (寬, 高) - 需被16整除以相容影片編碼
@@ -89,109 +89,227 @@ matplotlib.rcParams.update({
 # 功能函數
 # ============================================================
 
-def plot_id_uncertainty_bode():
-    """畫 ID model / Uncertainty model 波德圖"""
+def plot_plant_ensemble():
+    """畫受控體集合波德圖，可選 BUE 或 PRE 模型與抽取次數"""
+    print("\n選擇模型類型:")
+    print("  [1] BUE (Base Uncertainty Ensemble，無共振)")
+    print("  [2] PRE (Perturbed Resonant Ensemble，含隨機共振)")
+    print("  [b] 返回")
+    model_choice = input("請選擇: ").strip().lower()
+    if model_choice == 'b':
+        return
+    if model_choice not in ('1', '2'):
+        print("無效選擇")
+        return
+
+    count_input = input("抽取次數 [預設 100]: ").strip()
+    try:
+        count = int(count_input) if count_input else 100
+        if count <= 0:
+            raise ValueError
+    except ValueError:
+        print("無效輸入，使用預設值 100")
+        count = 100
+
     Ts = 0.001
     model_x = CNC.CNCModel('x', Ts)
-    ID_Plant = model_x.ID_Plant()
-    uncertainty_Plant = model_x.uncertainty_Plant()
 
-    omega = np.logspace(np.log10(0.1), np.log10(3000), num=5000)
+    if model_choice == '1':
+        model_name = "BUE"
+        get_plant = model_x.BUE_Plant
+    else:
+        model_name = "PRE"
+        get_plant = model_x.PRE_Plant
 
-    # 大小波德圖
-    plt.figure(figsize=FIG_SIZE_MULTI)
-
-    mag1, phase1, omega1 = ctrl.bode(ID_Plant['v2p'], omega, dB=True, plot=False)
-    plt.subplot(2, 1, 1)
-    plt.semilogx(omega1, 20 * np.log10(mag1))
-    plt.title('ID model')
-    plt.xlabel('Frequency [rad/s]')
-    plt.ylabel('Magnitude [dB]')
-    plt.grid(True, which='both', linestyle='--')
-
-    mag2, phase2, omega2 = ctrl.bode(uncertainty_Plant['v2p'], omega, dB=True, plot=False)
-    plt.subplot(2, 1, 2)
-    plt.semilogx(omega2, 20 * np.log10(mag2))
-    plt.title('Uncertainty model')
-    plt.xlabel('Frequency [rad/s]')
-    plt.ylabel('Magnitude [dB]')
-    plt.grid(True, which='both', linestyle='--')
-
-    plt.tight_layout()
-    plt.show()
-
-    # 相位波德圖
-    plt.figure(figsize=FIG_SIZE_MULTI)
-
-    plt.subplot(2, 1, 1)
-    plt.semilogx(omega1, phase1 * (180 / np.pi))
-    plt.title('ID model - Phase')
-    plt.xlabel('Frequency [rad/s]')
-    plt.ylabel('Phase [degrees]')
-    plt.grid(True, which='both', linestyle='--')
-
-    plt.subplot(2, 1, 2)
-    plt.semilogx(omega2, phase2 * (180 / np.pi))
-    plt.title('Uncertainty model - Phase')
-    plt.xlabel('Frequency [rad/s]')
-    plt.ylabel('Phase [degrees]')
-    plt.grid(True, which='both', linestyle='--')
-
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_random_resonance_plant():
-    """畫隨機共振峰值（純受控體，100次）"""
-    Ts = 0.001
-    model_x = CNC.CNCModel('x', Ts)
-    
+    print(f"繪製 {model_name} 集合，共 {count} 次...")
     plt.figure(figsize=FIG_SIZE_SINGLE)
     plant = model_x.ID_Plant()
     mag, _, oma = ctrl.bode(plant['v2p'], dB=True, omega_limits=[1e-2, 3e3], plot=False)
     plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2, label='ID Plant')
-    
-    for i in range(100):
-        Plant = model_x.uncertainty_Plant()
+
+    for _ in range(count):
+        Plant = get_plant()
         mag, _, oma = ctrl.bode(Plant['v2p'], dB=True, omega_limits=[1e-2, 3e3], plot=False)
         plt.plot(oma, 20 * np.log10(mag), color='r', linewidth=0.3, alpha=0.5)
-    
+
     plt.grid()
     plt.xscale('log')
     plt.xlim(1, 1e4)
     plt.ylim(-70, 70)
     plt.xlabel("Frequency (rad/s)")
     plt.ylabel("Magnitude (dB)")
-    plt.title("Uncertainty Plant Ensemble (100 samples)")
+    plt.title(f"{model_name} Plant Ensemble ({count} samples)")
     plt.legend()
     plt.tight_layout()
     plt.show()
 
 
-def plot_chirp_input():
-    """畫系統鑑別輸入(Chirp 信號）"""
+def plot_or_export_path():
+    """路徑繪圖與匯出工具 (支援選擇路徑類型、繪圖或匯出)"""
+    import pandas as pd
+    
     Ts = 0.001
-    path_time = 5
-    Magnitude = 100
-    t = np.arange(0, path_time, Ts)
+    path_model = CNC.PathModel(Ts)
+    
+    # === 第一層選單：選擇路徑類型 ===
+    print("\n選擇路徑類型:")
+    print("  [1] test_path (0~1 Hz chirp)")
+    print("  [2] test_path2 (0~8 Hz chirp)")
+    print("  [3] training_path (20條混合路徑)")
+    print("  [4] up_down_chirp (上下掃頻)")
+    print("  [b] 返回")
+    
+    path_choice = input("請選擇: ").strip().lower()
+    if path_choice == 'b':
+        return
+    
+    # 取得路徑資料
+    if path_choice == '1':
+        paths = [path_model.test_path()]
+        path_name = "test_path"
+    elif path_choice == '2':
+        paths = [path_model.test_path2()]
+        path_name = "test_path2"
+    elif path_choice == '3':
+        paths = path_model.training_path()
+        path_name = "training_path"
+    elif path_choice == '4':
+        paths = [path_model.up_down_chirp()]
+        path_name = "up_down_chirp"
+    else:
+        print("無效選擇")
+        return
+    
+    # === 第二層選單：選擇操作 ===
+    print("\n選擇操作:")
+    print("  [1] 繪圖")
+    print("  [2] 匯出 TXT")
+    print("  [3] 匯出 Excel")
+    print("  [b] 返回")
+    
+    action_choice = input("請選擇: ").strip().lower()
+    if action_choice == 'b':
+        return
+    
+    t = np.arange(0, len(paths[0]) * Ts, Ts)
+    
+    if action_choice == '1':  # 繪圖模式
+        if len(paths) > 1:  # training_path 多條路徑
+            print("\n選擇要繪製的路徑:")
+            print("  [0] 全部 (子圖排列)")
+            for i in range(len(paths)):
+                print(f"  [{i+1}] Path {i+1}")
+            print("  [b] 返回")
+            
+            idx_choice = input("請選擇: ").strip().lower()
+            if idx_choice == 'b':
+                return
+            elif idx_choice == '0':
+                # 畫全部子圖
+                n_paths = len(paths)
+                cols = int(np.ceil(np.sqrt(n_paths)))
+                rows = int(np.ceil(n_paths / cols))
+                plt.figure(figsize=(4 * cols, 3 * rows))
+                plt.suptitle('Training Paths', fontsize=24)
+                for i, path in enumerate(paths):
+                    ax = plt.subplot(rows, cols, i + 1)
+                    ax.plot(t[:len(path)], path)
+                    ax.grid(True)
+                    ax.set_title(f"Path {i+1}", fontsize=18)
+                    ax.tick_params(axis='both', labelsize=14)
+                plt.tight_layout(rect=[0, 0, 1, 0.96])
+                plt.show()
+            else:
+                try:
+                    idx = int(idx_choice) - 1
+                    if 0 <= idx < len(paths):
+                        _plot_single_path(t, paths[idx], f"{path_name} [{idx+1}]")
+                    else:
+                        print("索引超出範圍")
+                except ValueError:
+                    print("無效輸入")
+        else:
+            _plot_single_path(t, paths[0], path_name)
+    
+    elif action_choice == '2':  # 匯出 TXT
+        if len(paths) > 1:
+            print("\n選擇要匯出的路徑:")
+            print("  [0] 全部 (分別存檔)")
+            for i in range(len(paths)):
+                print(f"  [{i+1}] Path {i+1}")
+            print("  [b] 返回")
+            idx_choice = input("請選擇: ").strip().lower()
+            if idx_choice == 'b':
+                return
+            elif idx_choice == '0':
+                for i, path in enumerate(paths):
+                    filename = f"{path_name}_{i+1}.txt"
+                    np.savetxt(filename, path, delimiter=',', fmt='%.6f')
+                    print(f"已匯出: {filename}")
+            else:
+                try:
+                    idx = int(idx_choice) - 1
+                    if 0 <= idx < len(paths):
+                        filename = f"{path_name}_{idx+1}.txt"
+                        np.savetxt(filename, paths[idx], delimiter=',', fmt='%.6f')
+                        print(f"已匯出: {filename}")
+                    else:
+                        print("索引超出範圍")
+                except ValueError:
+                    print("無效輸入")
+        else:
+            filename = f"{path_name}.txt"
+            np.savetxt(filename, paths[0], delimiter=',', fmt='%.6f')
+            print(f"已匯出: {filename}")
+    
+    elif action_choice == '3':  # 匯出 Excel
+        if len(paths) > 1:
+            print("\n選擇要匯出的路徑:")
+            print("  [0] 全部 (合併為單一檔案)")
+            for i in range(len(paths)):
+                print(f"  [{i+1}] Path {i+1}")
+            print("  [b] 返回")
+            idx_choice = input("請選擇: ").strip().lower()
+            if idx_choice == 'b':
+                return
+            elif idx_choice == '0':
+                # 所有路徑合併成一個 DataFrame
+                data = {f"Path_{i+1}": path for i, path in enumerate(paths)}
+                df = pd.DataFrame(data)
+                filename = f"{path_name}_all.xlsx"
+                df.to_excel(filename, index=False, engine='openpyxl')
+                print(f"已匯出: {filename}")
+            else:
+                try:
+                    idx = int(idx_choice) - 1
+                    if 0 <= idx < len(paths):
+                        df = pd.DataFrame(paths[idx], columns=['value'])
+                        filename = f"{path_name}_{idx+1}.xlsx"
+                        df.to_excel(filename, index=False, engine='openpyxl')
+                        print(f"已匯出: {filename}")
+                    else:
+                        print("索引超出範圍")
+                except ValueError:
+                    print("無效輸入")
+        else:
+            df = pd.DataFrame(paths[0], columns=['value'])
+            filename = f"{path_name}.xlsx"
+            df.to_excel(filename, index=False, engine='openpyxl')
+            print(f"已匯出: {filename}")
+    else:
+        print("無效選擇")
 
-    inputdata = scipy.signal.chirp(t, f0=0, f1=50, t1=path_time, method='linear', phi=-90) * Magnitude
 
+def _plot_single_path(t, path, title):
+    """繪製單一路徑 (內部輔助函數)"""
     plt.figure(figsize=FIG_SIZE_SINGLE)
-    plt.plot(t, inputdata)
-    plt.title('Chirp Signal (0-50 Hz)')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Magnitude (rpm)')
+    plt.plot(t[:len(path)], path)
+    plt.title(title, fontsize=18)
+    plt.xlabel('Time (s)', fontsize=14)
+    plt.ylabel('Magnitude (mm)', fontsize=14)
     plt.grid(True)
     plt.tight_layout()
     plt.show()
-
-
-def plot_reference_path():
-    """畫參考路徑"""
-    Ts = 0.001
-    path_model = CNC.PathModel(Ts)
-    path_model.plot_path()
 
 
 def plot_resonance_bounds():
@@ -248,7 +366,7 @@ def plot_resonance_bounds():
 
 
 def dynamic_fft_mask_animation():
-    """路徑傅立葉使用動態時間遮罩測試（產生動畫）"""
+    """路徑傅立葉使用動態時間遮罩測試(產生動畫)"""
     import os
     import imageio
     
@@ -392,7 +510,7 @@ def generate_test_controller():
     """產生測試控制器：中央控制器 + 二階共振系統，用於 Runtime.py
     
     ⚠️ 警告：此方法產生的控制器會使閉迴路極點靠近虛軸，
-    導致阻尼比過低（例如 +6dB 增益時 min_zeta≈0.22），
+    導致阻尼比過低(例如 +6dB 增益時 min_zeta≈0.22)，
     可能在實際機台上引起共振。建議使用前先用 tool 9 檢查極點分布。
     """
     import argparse
@@ -587,14 +705,14 @@ def plot_experiment_OLoop_poles():
         ID_Plant_v2p = data['ID_Plant_v2p'].item()
         Ts = float(data['Ts'])
         
-        # 使用第一個控制器（假設所有步的控制器相同或只看第一個）
+        # 使用第一個控制器(假設所有步的控制器相同或只看第一個)
         CC = CC_list[0]
         
         # 閉迴路系統
         CL = ctrl.feedback(CC * ID_Plant_v2p, 1)
         poles_d = CL.poles()
         
-        # 轉換到連續域（所有極點）
+        # 轉換到連續域(所有極點)
         poles_c = np.log(poles_d) / Ts
         
         print(f"Total poles: {len(poles_c)}")
@@ -645,15 +763,13 @@ def plot_experiment_OLoop_poles():
 # ============================================================
 
 MENU = {
-    '1': ('畫 ID/Uncertainty model 波德圖', plot_id_uncertainty_bode),
-    '2': ('畫隨機共振峰值（純受控體 100次）', plot_random_resonance_plant),
-    '3': ('畫系統鑑別輸入（Chirp）', plot_chirp_input),
-    '4': ('畫參考路徑', plot_reference_path),
-    '5': ('隨機共振峰值上下界', plot_resonance_bounds),
-    '6': ('動態FFT遮罩測試（產生動畫）', dynamic_fft_mask_animation),
-    '7': ('載入實驗數據繪製開迴路波德圖', plot_experiment_openloop),
-    '8': ('產生測試控制器 ⚠️低阻尼可能引起共振', generate_test_controller),
-    '9': ('載入實驗數據繪製閉迴路極點圖', plot_experiment_OLoop_poles),
+    '1': ('受控體隨機抽樣波德圖 (BUE/PRE)', plot_plant_ensemble),
+    '2': ('路徑資料繪圖與匯出', plot_or_export_path),
+    '3': ('隨機共振峰值上下界繪圖', plot_resonance_bounds),
+    '4': ('動態FFT遮罩測試(產生動畫)', dynamic_fft_mask_animation),
+    '5': ('載入實驗數據繪製開迴路波德圖', plot_experiment_openloop),
+    '6': ('產生測試控制器 ⚠️低阻尼可能引起共振', generate_test_controller),
+    '7': ('載入實驗數據繪製閉迴路極點圖', plot_experiment_OLoop_poles),
 }
 
 

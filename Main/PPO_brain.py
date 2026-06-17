@@ -59,7 +59,7 @@ class PPO:
         self.n_actions = n_actions
         self.bound = bound
         self.PPO_parameter=PPO_parameter
-        self.lr = PPO_parameter.learning_rate
+        self.lr = 1e-5  # 預設學習率，會被 set_learning_rate() 覆寫
         self.gamma = PPO_parameter.gamma
         self.epsilon = PPO_parameter.epsilon
         self.a_update_steps = PPO_parameter.a_update_steps
@@ -159,6 +159,14 @@ class PPO:
         self.actor_model.to('cpu')
         self.actor_old_model.to('cpu')
         self.critic_model.to('cpu')
+
+    def set_learning_rate(self, lr):
+        """動態更新學習率。"""
+        self.lr = lr
+        for param_group in self.actor_optim.param_groups:
+            param_group['lr'] = lr
+        for param_group in self.critic_optim.param_groups:
+            param_group['lr'] = lr
 
 class ReplayBuffer:
     def __init__(self, capacity):

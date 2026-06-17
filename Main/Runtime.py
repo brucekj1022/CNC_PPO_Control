@@ -1,5 +1,4 @@
-﻿import argparse
-import os
+﻿import os
 import time
 import warnings
 from datetime import datetime
@@ -15,11 +14,13 @@ import CNC
 import pc_server
 from PPO_brain import PPO
 
-np.set_printoptions(precision=10,suppress=True)#設置打印位數，科學記號
+np.set_printoptions(precision=10, suppress=True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-time_start=time.time()
+time_start = time.time()
 
-######   存取資料   ######
+# ============================================================================
+#                              存取資料
+# ============================================================================
 #region
 read=True
 use_switch_model = False  # True: 雙模型切換, False: 單模型
@@ -30,134 +31,141 @@ else:
     read_file_name='ModelBUE1.pth'
 #endregion
 
-######   參數區域    ######
- #region
-#PPO參數
-n_states=131# action 28, path FFT 100, maxResonance 2, error 1
-numFC=14#頻率點數量
-bound= 20*np.log10(3000)#神經網路輸出限制dB
-parser1 = argparse.ArgumentParser(description="PPO參數")
-parser1.add_argument('--iteration', type=int, default=2000)
-parser1.add_argument('--n_step_learning', type=int, default=20)
-parser1.add_argument('--learning_rate', type=float, default=1e-5)
-parser1.add_argument('--mini_batch', type=int, default=30)
-parser1.add_argument('--batch_size', type=int, default=2000)
-parser1.add_argument('--n_round_batch', type=int, default=60)
-parser1.add_argument('--gamma', type=float, default=0.9)
-parser1.add_argument('--epsilon', type=float, default=0.03)
-parser1.add_argument('--c_update_steps', type=int, default=10)
-parser1.add_argument('--a_update_steps', type=int, default=3)
-PPO_parameter = parser1.parse_args()
-#CNC參數
-x_polegain=0.4352
-z_polegain=0.4952
-parser2 = argparse.ArgumentParser(description="CNC參數")
-parser2.add_argument('--Lq', type=int, default=10)
-parser2.add_argument('--w_sumError', type=float, default=1e+2)
-parser2.add_argument('--w_FCfreq', type=float, default=1e+0)
-parser2.add_argument('--w_Wgc', type=float, default=1e+3)
-parser2.add_argument('--w_earlyTrain', type=float, default=5e-3)
-CNC_parameter = parser2.parse_args()
-#其他參數
-Ts=0.001
-pdl=300#path_distric_len 多少ms一個區間
-fft_limit_freq = 2  # path_FFT 取到幾 Hz
-num_low_freq_FC = 3  # 低頻限制點數量
-manual_FC = np.array([
-    [0.1, 1000],
-    [1, 100],
-    [10, 10],
-    [100, 1.1],
-    [300, 0.8],
-    [500, 0.39],
-    [700, 0.16],
-    [900, 0.07],
-    [1000, 0.08],
-    [1300, 0.1],        
-    [1500, 0.09],
-    [2000, 0.03],
-    [2500, 0.07],
-    [3000, 0.1]
-])
-#TCP參數
+# ============================================================================
+#                              參數區域
+# ============================================================================
+#region
+# === 模擬參數 ===
+Ts = 0.001              # 取樣時間 (s)
+pdl = 300               # 路徑區段長度 (samples)，即 300ms 一個區間
+
+# === 神經網路狀態/動作 ===
+n_states = 131          # 狀態維度: action(28) + path_FFT(100) + resonance(2) + error(1)
+numFC = 14              # 頻率限制點數量
+bound = 20 * np.log10(3000)  # Actor 輸出上下界 (dB)
+
+# === PPO 超參數 ===
+class PPO_parameter:
+    n_step_learning = 20    # N-step 學習步數
+    mini_batch = 30         # Mini-batch 大小
+    batch_size = 2000       # Replay buffer 大小
+    n_round_batch = 60      # 每輪最大 batch 數
+    gamma = 0.9             # 折扣因子
+    epsilon = 0.03          # PPO clip 範圍
+    c_update_steps = 10     # Critic 更新次數
+    a_update_steps = 3      # Actor 更新次數
+
+# === QCQP 控制器參數 ===
+class CNC_parameter:
+    Lq = 10                 # Q 參數階數
+    w_sumError = 1e+2       # 誤差權重
+    w_FCfreq = 1e+0         # FC 分布均勻度權重
+    w_Wgc = 1e+3            # Wgc 懲罰權重 (semiSolved)
+    w_earlyTrain = 5e-3     # Infeasible 懲罰權重
+
+x_polegain = 0.4352         # X軸極點縮放係數
+z_polegain = 0.4952         # Z軸極點縮放係數
+
+# === FFT 參數 ===
+fft_limit_freq = 2          # path_FFT 頻率上限 (Hz)
+num_low_freq_FC = 3         # 低頻限制點數量
+
+# === TCP 參數 ===
 HOST = "0.0.0.0"
 PORT = 5005
 #endregion
 
-######     函數區     ######
+# ============================================================================
+#                              函數區
+# ============================================================================
 #region
-def Time_show(time1, time2):
-    total_time=int(time2-time1)
-    second=total_time%60
-    total_time=int(total_time/60)
-    minent=total_time%60
-    hour=int(total_time/60)
-    print(hour,":",minent,":",second)
+def show_elapsed_time(start_time, end_time):
+    """顯示經過時間 (時:分:秒)。"""
+    total_seconds = int(end_time - start_time)
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    print(f"{hours}:{minutes:02d}:{seconds:02d}")
 def path_FFT(path, path_index, prev_dominant_freq):
-    min_freq=0.2#避免太低頻讓mask長度變無限大
-    if prev_dominant_freq<min_freq : prev_dominant_freq=min_freq
-    FFT_mask=int(1/prev_dominant_freq/Ts*2)
-    N=int(100000/fft_limit_freq)#path_FFT輸出後為100資料點，如果要改成50資料點就改成50000
+    """
+    計算路徑的 FFT 頻譜，回傳正規化振幅、主頻率、遮罩長度。
+    遮罩長度根據上一步主頻率動態調整，確保涵蓋完整週期。
+    """
+    min_freq = 0.2  # 避免太低頻讓 mask 長度過長
+    dominant_freq = max(prev_dominant_freq, min_freq)
+    fft_mask_len = int(1 / dominant_freq / Ts * 2)
+    N = int(100000 / fft_limit_freq)  # 輸出 100 點 (改 50000 則為 50 點)
 
-    if path_index+FFT_mask > len(path):  # 如果不夠 FFT_mask 的長度，取最後滿足 FFT_mask 的片段
-        path_mask=path[-FFT_mask:]
+    # 取得 FFT 區段
+    if path_index + fft_mask_len > len(path):
+        path_segment = path[-fft_mask_len:]
     else:
-        path_mask=path[path_index : path_index+FFT_mask]
+        path_segment = path[path_index:path_index + fft_mask_len]
 
-    path_mask=path_mask-np.mean(path_mask)#減掉DC值
-    hanning_window = np.hanning(FFT_mask)
-    windowed_path=hanning_window*path_mask
-    yf = scipy.fft.fft(windowed_path,N)  # 計算傅立葉轉換
-    xf = scipy.fft.fftfreq(N, Ts)  # 計算頻率軸
+    # 去除 DC 並加窗
+    path_segment = path_segment - np.mean(path_segment)
+    window = np.hanning(fft_mask_len)
+    windowed_path = window * path_segment
+    
+    # FFT 計算
+    yf = scipy.fft.fft(windowed_path, N)
+    xf = scipy.fft.fftfreq(N, Ts)
 
-    # 只保留正頻部分
-    magnitude = np.abs(yf[:N // 2])/pdl#頻譜振幅
-    xf = xf[:N//2]#正頻頻率軸
-    #只保留到希望的頻率
-    mask=xf<fft_limit_freq
-    magnitude=magnitude[mask]
-    #歸一化
-    magnitude_min = np.min(magnitude)
-    magnitude_max = np.max(magnitude)
-    normalized_magnitude= (magnitude - magnitude_min) / (magnitude_max - magnitude_min)
-    # 找出所有峰值
-    peaks, _ = scipy.signal.find_peaks(normalized_magnitude)
-    peak_magnitudes = normalized_magnitude[peaks]
-    # 篩選符合條件的峰值
-    threshold = 0.7  # 設定峰值的門檻
-    valid_peaks = peaks[peak_magnitudes >= threshold]
-    if len(valid_peaks) > 0:# 找到最小的頻率對應的峰值
+    # 取正頻部分並限制頻率範圍
+    magnitude = np.abs(yf[:N // 2]) / pdl
+    xf = xf[:N // 2]
+    freq_mask = xf < fft_limit_freq
+    magnitude = magnitude[freq_mask]
+    xf = xf[freq_mask]
+    
+    # 正規化
+    mag_min, mag_max = np.min(magnitude), np.max(magnitude)
+    normalized_mag = (magnitude - mag_min) / (mag_max - mag_min)
+    
+    # 找主頻率 (峰值 > 0.7 的最低頻率，或最大振幅頻率)
+    peaks, _ = scipy.signal.find_peaks(normalized_mag)
+    peak_mags = normalized_mag[peaks]
+    valid_peaks = peaks[peak_mags >= 0.7]
+    
+    if len(valid_peaks) > 0:
         dominant_freq = xf[valid_peaks].min()
-    else:# 如果没有符合条件的峰值，则选择最大幅值对应的频率
-        dominant_index = np.argmax(normalized_magnitude)
-        dominant_freq = xf[dominant_index]
-    return normalized_magnitude, dominant_freq, FFT_mask
-def state_action(FC):
-    return 20*np.log10(np.hstack((FC[:, 0], FC[:, 1])).ravel())/30
-def state_maxResonance(CC, plant, Ts, path_district, ek):
-    HFRw, HFRm, HFRg=CNC.find_resonance(CC, plant, Ts, path_district, ek)
-    if len(HFRw) > 0:
-        idx = np.argmax(HFRm)
-        max_resonance_freq_dB = 20 * np.log10(HFRw[idx])/30
-        max_resonance_gain_dB = HFRg[idx]/30
     else:
-        max_resonance_freq_dB = 0
-        max_resonance_gain_dB = 0
-    return [max_resonance_freq_dB, max_resonance_gain_dB]
+        dominant_freq = xf[np.argmax(normalized_mag)]
+    
+    return normalized_mag, dominant_freq, fft_mask_len
+def state_action(FC):
+    """將 FC (頻率, 增益) 轉換為 dB 正規化狀態向量。"""
+    return 20 * np.log10(np.hstack((FC[:, 0], FC[:, 1])).ravel()) / 30
+def state_max_resonance(CC, plant, Ts, path_segment, ek):
+    """提取最大共振點的頻率與增益作為狀態 (正規化 dB)。"""
+    resonance_freqs, resonance_mags, resonance_gains = CNC.find_resonance(
+        CC, plant, Ts, path_segment, ek
+    )
+    if len(resonance_freqs) > 0:
+        idx = np.argmax(resonance_mags)
+        freq_dB = 20 * np.log10(resonance_freqs[idx]) / 30
+        gain_dB = resonance_gains[idx] / 30
+    else:
+        freq_dB, gain_dB = 0, 0
+    return [freq_dB, gain_dB]
 def state_error(ek):
-    weights = 0.7 ** np.arange(len(ek))  # 產生一個 0.7**i 的數列
-    sumError=np.sum(abs(ek) * weights)
-    return   [np.log1p(sumError)/10]
-def reset_buffers(num_path_district, pdl):
-    data_buffer = [None] * num_path_district  # 儲存計算reward前的資料
-    ek_buffer = np.zeros((3, pdl))            # 模擬誤差延遲進入
-    X0 = 0                                     # 初始狀態
-    iter_r = 0                                 # 累計 reward
-    error = []                                 # 儲存每步誤差
-    return data_buffer, ek_buffer, X0, iter_r, error
+    """計算加權誤差的對數作為狀態。"""
+    weights = 0.7 ** np.arange(len(ek))
+    sum_error = np.sum(np.abs(ek) * weights)
+    return [np.log1p(sum_error) / 10]
+def reset_episode_buffers(num_segments, segment_len):
+    """重置每輪的暫存區。"""
+    data_buffer = [None] * num_segments  # 儲存計算 reward 前的資料
+    ek_buffer = np.zeros((3, segment_len))  # 模擬誤差延遲 (3 步緩衝)
+    X0 = 0  # 初始狀態
+    episode_reward = 0  # 累計 reward
+    error_history = []  # 儲存每步誤差
+    return data_buffer, ek_buffer, X0, episode_reward, error_history
 #endregion
 
-######   創造實例    ######
+# ============================================================================
+#                             創造實例
+# ============================================================================
 #region
 if use_switch_model:
     NO1agent = PPO(n_states , numFC*2, bound, PPO_parameter, device)  # 追蹤模型
@@ -178,7 +186,9 @@ PlotExporter=CNC.PlotExporter()
 srv=pc_server.create_server(HOST, PORT)
 #endregion
 
-#####   讀取資料   ####
+# ============================================================================
+#                             讀取資料
+# ============================================================================
 #region
 if read:
     try:
@@ -250,22 +260,9 @@ else:
         print(f"不引進model，從0訓練")
 #endregion
 
-#創造空容器
-#region
-FC = np.zeros((numFC, 2))
-# 數據收集容器（只存每步的關鍵數據）
-data_collector = {
-    'CC_list': [],
-    'FC_list': [],
-    'manual_FC_list': [],
-    'error_list': [],
-    'status_list': [],
-    'resonance_freq_list': [],
-    'resonance_gain_list': []
-}
-data_collector['model_used'] = []  # 記錄每步使用的model (單模型時永遠是 model1)
-#endregion
-
+# ============================================================================
+#                            固定控制器
+# ============================================================================
 #邵平控制器
 shaoping = [8885.431062041,       -24637.015400412543,     31725.764043065406,
  -24272.73172976235,      10722.74306304059  ,    -2552.3219619078864,
@@ -297,33 +294,40 @@ X_resonance_g6_w800 = [1861.7155507290054, -2166.105184673084, -1249.79048332394
                   -0.03503139955614494, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 CC_X_resonance_g6_w800 = ctrl.tf2ss(ctrl.TransferFunction(X_resonance_g6_w800[:15], X_resonance_g6_w800[15:], Ts))
 
-#X軸本身機台共振測試控制器 omega=800, zeta_num=2.0, zeta_den=1.0 (+6dB, min_zeta=0.22)
-X_boost_6db = [2621.599518367347, -5301.486422448978, 3323.8526306123026, -313.8304183677833, -236.91878571373252,
-               0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-               1.0, -2.141080757142856, 1.9741278693877526, -0.9345653442857125, 0.21875108693877493,
-               -0.019720309591836665, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-CC_X_boost_6db = ctrl.tf2ss(ctrl.TransferFunction(X_boost_6db[:15], X_boost_6db[15:], Ts))
+# ============================================================================
+#                             實驗開始
+# ============================================================================
+FC = np.zeros((numFC, 2))
+data_collector = {
+    'CC_list': [],
+    'FC_list': [],
+    'manual_FC_list': [],
+    'error_list': [],
+    'status_list': [],
+    'resonance_freq_list': [],
+    'resonance_gain_list': [],
+    'model_used': []
+}
 
-#實驗設定
-path=testpath
-path_index=0
-num_path_district=int((len(path)-path_index)/pdl)
-prev_dominant_freq=0.1
+path = testpath
+path_index = 0
+num_segments = int((len(path) - path_index) / pdl)
+dominant_freq = 0.1
 if use_switch_model:
-    switch=False
-    resonance_detected=0
+    switch = False
+    resonance_detected = 0
 #暫存區歸零
 costfunction_x.initialize()
-data_buffer, ek_buffer, X0, iter_r, error = reset_buffers(num_path_district, pdl)
-ek=np.zeros(pdl)
-CC=None
+data_buffer, ek_buffer, X0, _, error_history = reset_episode_buffers(num_segments, pdl)
+ek = np.zeros(pdl)
+CC = None
 #準備第一個state
-path_FFT_magnitude, prev_dominant_freq, _=path_FFT(path, path_index , prev_dominant_freq)
-last_solved_FC=costfunction_x.last_solved_FC
-s=np.concatenate([state_action(last_solved_FC), path_FFT_magnitude, np.zeros(3)])#合成第一組狀態
+path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
+last_solved_FC = costfunction_x.last_solved_FC
+s = np.concatenate([state_action(last_solved_FC), path_FFT_magnitude, np.zeros(3)])
 print("Standby for link in \n")
 
-for step in range(num_path_district+1):#開始產生歷程，因為Error有延遲所以要多兩步收集資料
+for step in range(num_segments + 1):  # 因為 Error 有延遲所以要多一步收集資料
     try:
         #等待連線（10秒超時）
         srv.settimeout(10.0)
@@ -341,20 +345,22 @@ for step in range(num_path_district+1):#開始產生歷程，因為Error有延�
         break
 
     #建構state並收集error
-    if step>=1:
+    if step >= 1:
         data_collector['error_list'].append(ek.copy())
-        if step==num_path_district:
+        if step == num_segments:
             break
-        path_FFT_magnitude, prev_dominant_freq, _=path_FFT(path, path_index, prev_dominant_freq)
-        s = np.concatenate([ state_action(FC), path_FFT_magnitude, state_maxResonance(CC, ID_Plant["v2p"], Ts, path_district, ek), state_error(ek)])
+        path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
+        s = np.concatenate([
+            state_action(FC), path_FFT_magnitude,
+            state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek),
+            state_error(ek)
+        ])
 
         #雙模型模式：檢測共振換model
         if use_switch_model:
-            ##
-            print(state_maxResonance(CC, ID_Plant["v2p"], Ts, path_district, ek_buffer[step%3])[0])
-            ##
-            if state_maxResonance(CC, ID_Plant["v2p"], Ts, path_district, ek)[0]!=0:
-                resonance_detected+=1
+            print(state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)[0])
+            if state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)[0] != 0:
+                resonance_detected += 1
 
     #產生動作
     if use_switch_model:
@@ -374,14 +380,14 @@ for step in range(num_path_district+1):#開始產生歷程，因為Error有延�
     action = 10.0 ** (a / 20.0)               # 線性倍率
     FC[:, 0] = action[:numFC]                 # 頻率
     FC[:, 1] = action[numFC:]                 # 增益
-    sorted_indices = np.argsort(FC[:, 0])  #排序FC的索引
-    FC = FC[sorted_indices]  # 按照索引排序FC
-    #是否合成新控制器並模擬運行
-    status, CC, ek_hat, manual_add_FC=costfunction_x.switch_controller(path, path_index, FC.copy(), ek)
-    path_district=path[path_index : path_index+pdl]
+    FC = FC[np.argsort(FC[:, 0])]             # 按頻率排序
     
-    #使用固定控制器
-    CC=CC_X_resonance
+    #合成新控制器
+    status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek)
+    path_segment = path[path_index:path_index + pdl]
+    
+    #使用固定控制器 (可選: CC_shaoping, CC_X_central, CC_X_resonance_old, CC_X_resonance_g6_w800, CC_X_boost_6db)
+    # CC = CC_shaoping
 
     #收集實驗數據（每步）
     data_collector['CC_list'].append(CC.copy())
@@ -391,13 +397,12 @@ for step in range(num_path_district+1):#開始產生歷程，因為Error有延�
 
     #轉出CC
     CC_tf = ctrl.ss2tf(CC)
-    # 注意：python-control 回傳的是 [a0, a1, ..., aN] / [b0, b1, ..., bN]
-    den = np.array(CC_tf.den[0][0])  # a0, a1, ..., aN
-    num = np.array(CC_tf.num[0][0])  # b0, b1, ..., bN
-    # 如果 LabVIEW 端要求 num、den 長度一樣，可以這樣補 0
+    den = np.array(CC_tf.den[0][0])
+    num = np.array(CC_tf.num[0][0])
     if len(num) < len(den):
         num = np.pad(num, (0, len(den) - len(num)))
-    CCdata=np.concatenate((num, den))
+    CCdata = np.concatenate((num, den))
+    
     #TCP傳輸資料
     try:
         ok = pc_server.send(conn, CCdata)
@@ -409,14 +414,13 @@ for step in range(num_path_district+1):#開始產生歷程，因為Error有延�
         break
 
     #準備下一步
-    path_index=path_index+pdl
+    path_index += pdl
 
     #儲存共振資料並打印
-    resonance_state = state_maxResonance(CC, ID_Plant["v2p"], Ts, path_district, ek)
+    resonance_state = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)
     freq_normalized = resonance_state[0]
     mag_normalized = resonance_state[1]
-    # 转换为线性频率和dB值存储
-    freq_linear = 10 ** ((freq_normalized / 20)*30) if freq_normalized != 0 else 0
+    freq_linear = 10 ** ((freq_normalized / 20) * 30) if freq_normalized != 0 else 0
     mag_dB = mag_normalized * 30
     data_collector['resonance_freq_list'].append(freq_linear)
     data_collector['resonance_gain_list'].append(mag_dB)
@@ -425,7 +429,7 @@ for step in range(num_path_district+1):#開始產生歷程，因為Error有延�
         f"{status:<11} | "
         f"{freq_linear:10.5g} | "
         f"{mag_dB:12.5g}"
-        )
+    )
  
 #關閉server
 try:
@@ -438,7 +442,6 @@ time_end = time.time()
 experiment_duration = time_end - time_start
 
 #整理完整實驗數據
-experiment_datetime = datetime.fromtimestamp(time_start).strftime("%Y.%m.%d.%H.%M")
 experiment_data = {
     # 1. 實驗基本資訊
     'execution_script': 'Runtime.py',
@@ -464,7 +467,7 @@ experiment_data = {
     # 3. 參考路徑資訊
     'reference_path': path,
     'path_length': len(path),
-    'num_districts': num_path_district,
+    'num_segments': num_segments,
     
     # 4. 受控體模型
     'ID_Plant_v2p': ID_Plant["v2p"]
@@ -493,11 +496,8 @@ experiment_data['resonance_gain_list'] = np.array(data_collector['resonance_gain
 experiment_data['model_used'] = data_collector['model_used']
 experiment_data['switch_step'] = None if not use_switch_model else (None if not switch else next((i for i, m in enumerate(data_collector['model_used']) if m == 'NO2_resonance'), None))
 
-#創建保存目錄
-save_dir = os.path.join("..", "ExperimentData", experiment_datetime)
-os.makedirs(save_dir, exist_ok=True)
-
-#保存數據
+#保存數據到 PlotExporter 建立的資料夾
+save_dir = PlotExporter.get_experiment_folder()
 save_path = os.path.join(save_dir, "runtime_data.npz")
 np.savez_compressed(save_path, **experiment_data, allow_pickle=True)
 print(f"\n實驗數據已保存至: {save_path}")

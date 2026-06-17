@@ -1,9 +1,7 @@
-﻿import argparse
-import os
+﻿import os
 import time
 import warnings
 
-import control as ctrl
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
@@ -16,140 +14,186 @@ np.set_printoptions(precision=15,suppress=True)#設置打印位數，科學記�
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 time_start=time.time()
 
-######   存取資料   ######
+# ============================================================================
+#                              存取設定
+# ============================================================================
 #region
-read=True
-read_file_name='Model.pth'
-save=True
-save_file_name='Model.pth'
+read = True
+read_file_name = 'ModelBUE1.pth'
+save = True
+save_file_name = 'Model.pth'
 #endregion
 
-######   參數區域    ######
- #region
-#PPO參數
-n_states=131# action 28, path FFT 100, maxResonance 2, error 1
-numFC=14#頻率點數量
-bound= 20*np.log10(3000)#神經網路輸出限制dB
-parser1 = argparse.ArgumentParser(description="PPO參數")
-parser1.add_argument('--iteration', type=int, default=3000)
-parser1.add_argument('--n_step_learning', type=int, default=20)
-parser1.add_argument('--learning_rate', type=float, default=1e-5)
-parser1.add_argument('--mini_batch', type=int, default=30)
-parser1.add_argument('--batch_size', type=int, default=2000)
-parser1.add_argument('--n_round_batch', type=int, default=60)
-parser1.add_argument('--gamma', type=float, default=0.9)
-parser1.add_argument('--epsilon', type=float, default=0.03)
-parser1.add_argument('--c_update_steps', type=int, default=10)
-parser1.add_argument('--a_update_steps', type=int, default=3)
-PPO_parameter = parser1.parse_args()
-#CNC參數
-x_polegain=0.4352
-z_polegain=0.4952
-parser2 = argparse.ArgumentParser(description="CNC參數")
-parser2.add_argument('--Lq', type=int, default=10)
-parser2.add_argument('--w_sumError', type=float, default=1e+3)
-parser2.add_argument('--w_FCfreq', type=float, default=4e+3)
-parser2.add_argument('--w_Wgc', type=float, default=1e+3)
-parser2.add_argument('--w_earlyTrain', type=float, default=5e-3)
-CNC_parameter = parser2.parse_args()
-#其他參數
-Ts=0.001
-pdl=300#path_distric_len 多少ms一個區間
-fft_limit_freq = 15  # path_FFT 取到幾 Hz
-num_low_freq_FC = 3  # 低頻限制點數量
-max_error_um = 10000  # 最大誤差 (um)，超過視為不穩定
+# ============================================================================
+#                              參數區域
+# ============================================================================
+#region
+# === 模擬參數 ===
+Ts = 0.001              # 取樣時間 (s)
+pdl = 300               # 路徑區段長度 (samples)，即 300ms 一個區間
+max_error_um = 10000    # 最大容許誤差 (um)，超過視為發散
+
+# === 神經網路狀態/動作 ===
+n_states = 131          # 狀態維度: action(28) + path_FFT(100) + resonance(2) + error(1)
+numFC = 14              # 頻率限制點數量
+bound = 20 * np.log10(3000)  # Actor 輸出上下界 (dB)
+
+# === PPO 超參數 ===
+class PPO_parameter:
+    n_step_learning = 20    # N-step 學習步數
+    mini_batch = 30         # Mini-batch 大小
+    batch_size = 2000       # Replay buffer 大小
+    n_round_batch = 60      # 每輪最大 batch 數
+    gamma = 0.9             # 折扣因子
+    epsilon = 0.03          # PPO clip 範圍
+    c_update_steps = 10     # Critic 更新次數
+    a_update_steps = 3      # Actor 更新次數
+
+# === 學習率排程 ===
+# 格式: [(學習率, 持續輪數), ...]
+lr_schedule = [
+    (1e-5, 3000),  # 前 1000 輪用 1e-5
+    (1e-6, 6000),  # 接下來 2000 輪用 1e-6
+    (1e-7, 6000),
+]
+total_iterations = sum(rounds for _, rounds in lr_schedule)  # 總訓練輪數
+
+# === QCQP 控制器參數 ===
+class CNC_parameter:
+    Lq = 10                 # Q 參數階數
+    w_sumError = 1e+3       # 誤差權重
+    w_FCfreq = 4e+3         # FC 分布均勻度權重
+    w_Wgc = 1e+3            # Wgc 懲罰權重 (semiSolved)
+    w_earlyTrain = 5e-3     # Infeasible 懲罰權重
+
+x_polegain = 0.4352         # X軸極點縮放係數
+z_polegain = 0.4952         # Z軸極點縮放係數
+
+# === FFT 參數 ===
+fft_limit_freq = 15         # path_FFT 頻率上限 (Hz)
+num_low_freq_FC = 3         # 低頻限制點數量
+
+# === 繪圖設定 ===
+enable_plot = False         # True: 輸出 Bode 圖/MP4/誤差圖
+
+# === 手動 FC 初始值 (頻率 rad/s, 增益) ===
 manual_FC = np.array([
-    [0.1, 1000],
-    [1, 100],
-    [10, 10],
-    [100, 1.1],
-    [300, 0.8],
-    [500, 0.39],
-    [700, 0.16],
-    [900, 0.07],
-    [1000, 0.08],
-    [1300, 0.1],        
-    [1500, 0.09],
-    [2000, 0.03],
-    [2500, 0.07],
-    [3000, 0.1]
+    [0.1,   1000],
+    [1,     100],
+    [10,    10],
+    [100,   1.1],
+    [300,   0.8],
+    [500,   0.39],
+    [700,   0.16],
+    [900,   0.07],
+    [1000,  0.08],
+    [1300,  0.1],
+    [1500,  0.09],
+    [2000,  0.03],
+    [2500,  0.07],
+    [3000,  0.1]
 ])
 #endregion
 
-######     函數區     ######
+# ============================================================================
+#                              函數區
+# ============================================================================
 #region
-def Time_show(time1, time2):
-    total_time=int(time2-time1)
-    second=total_time%60
-    total_time=int(total_time/60)
-    minent=total_time%60
-    hour=int(total_time/60)
-    print(hour,":",minent,":",second)
+def show_elapsed_time(start_time, end_time):
+    """顯示經過時間 (時:分:秒)。"""
+    total_seconds = int(end_time - start_time)
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    print(f"{hours}:{minutes:02d}:{seconds:02d}")
 def path_FFT(path, path_index, prev_dominant_freq):
-    min_freq=0.2#避免太低頻讓mask長度變無限大
-    if prev_dominant_freq<min_freq : prev_dominant_freq=min_freq
-    FFT_mask=int(1/prev_dominant_freq/Ts*2)
-    N=int(100000/fft_limit_freq)#path_FFT輸出後為100資料點，如果要改成50資料點就改成50000
+    """
+    計算路徑的 FFT 頻譜，回傳正規化振幅、主頻率、遮罩長度。
+    遮罩長度根據上一步主頻率動態調整，確保涵蓋完整週期。
+    """
+    min_freq = 0.2  # 避免太低頻讓 mask 長度過長
+    dominant_freq = max(prev_dominant_freq, min_freq)
+    fft_mask_len = int(1 / dominant_freq / Ts * 2)
+    N = int(100000 / fft_limit_freq)  # 輸出 100 點 (改 50000 則為 50 點)
 
-    if path_index+FFT_mask > len(path):  # 如果不夠 FFT_mask 的長度，取最後滿足 FFT_mask 的片段
-        path_mask=path[-FFT_mask:]
+    # 取得 FFT 區段
+    if path_index + fft_mask_len > len(path):
+        path_segment = path[-fft_mask_len:]
     else:
-        path_mask=path[path_index : path_index+FFT_mask]
+        path_segment = path[path_index:path_index + fft_mask_len]
 
-    path_mask=path_mask-np.mean(path_mask)#減掉DC值
-    hanning_window = np.hanning(FFT_mask)
-    windowed_path=hanning_window*path_mask
-    yf = scipy.fft.fft(windowed_path,N)  # 計算傅立葉轉換
-    xf = scipy.fft.fftfreq(N, Ts)  # 計算頻率軸
+    # 去除 DC 並加窗
+    path_segment = path_segment - np.mean(path_segment)
+    window = np.hanning(fft_mask_len)
+    windowed_path = window * path_segment
+    
+    # FFT 計算
+    yf = scipy.fft.fft(windowed_path, N)
+    xf = scipy.fft.fftfreq(N, Ts)
 
-    # 只保留正頻部分
-    magnitude = np.abs(yf[:N // 2])/pdl#頻譜振幅
-    xf = xf[:N//2]#正頻頻率軸
-    #只保留到希望的頻率
-    mask=xf<fft_limit_freq
-    magnitude=magnitude[mask]
-    #歸一化
-    magnitude_min = np.min(magnitude)
-    magnitude_max = np.max(magnitude)
-    normalized_magnitude= (magnitude - magnitude_min) / (magnitude_max - magnitude_min)
-    # 找出所有峰值
-    peaks, _ = scipy.signal.find_peaks(normalized_magnitude)
-    peak_magnitudes = normalized_magnitude[peaks]
-    # 篩選符合條件的峰值
-    threshold = 0.7  # 設定峰值的門檻
-    valid_peaks = peaks[peak_magnitudes >= threshold]
-    if len(valid_peaks) > 0:# 找到最小的頻率對應的峰值
+    # 取正頻部分並限制頻率範圍
+    magnitude = np.abs(yf[:N // 2]) / pdl
+    xf = xf[:N // 2]
+    freq_mask = xf < fft_limit_freq
+    magnitude = magnitude[freq_mask]
+    xf = xf[freq_mask]
+    
+    # 正規化
+    mag_min, mag_max = np.min(magnitude), np.max(magnitude)
+    normalized_mag = (magnitude - mag_min) / (mag_max - mag_min)
+    
+    # 找主頻率 (峰值 > 0.7 的最低頻率，或最大振幅頻率)
+    peaks, _ = scipy.signal.find_peaks(normalized_mag)
+    peak_mags = normalized_mag[peaks]
+    valid_peaks = peaks[peak_mags >= 0.7]
+    
+    if len(valid_peaks) > 0:
         dominant_freq = xf[valid_peaks].min()
-    else:# 如果没有符合条件的峰值，则选择最大幅值对应的频率
-        dominant_index = np.argmax(normalized_magnitude)
-        dominant_freq = xf[dominant_index]
-    return normalized_magnitude, dominant_freq, FFT_mask
-def state_action(FC):
-    return 20*np.log10(np.hstack((FC[:, 0], FC[:, 1])).ravel())/30
-def state_maxResonance(CC, plant, Ts, path_district, ek):
-    HFRw, HFRm, HFRg=CNC.find_resonance(CC, plant, Ts, path_district, ek)
-    if len(HFRw) > 0:
-        idx = np.argmax(HFRm)
-        max_resonance_freq_dB = 20 * np.log10(HFRw[idx])/30
-        max_resonance_gain_dB = HFRg[idx]/30
     else:
-        max_resonance_freq_dB = 0
-        max_resonance_gain_dB = 0
-    return [max_resonance_freq_dB, max_resonance_gain_dB]
+        dominant_freq = xf[np.argmax(normalized_mag)]
+    
+    return normalized_mag, dominant_freq, fft_mask_len
+def state_action(FC):
+    """將 FC (頻率, 增益) 轉換為 dB 正規化狀態向量。"""
+    return 20 * np.log10(np.hstack((FC[:, 0], FC[:, 1])).ravel()) / 30
+def state_max_resonance(CC, plant, Ts, path_segment, ek):
+    """提取最大共振點的頻率與增益作為狀態 (正規化 dB)。"""
+    resonance_freqs, resonance_mags, resonance_gains = CNC.find_resonance(
+        CC, plant, Ts, path_segment, ek
+    )
+    if len(resonance_freqs) > 0:
+        idx = np.argmax(resonance_mags)
+        freq_dB = 20 * np.log10(resonance_freqs[idx]) / 30
+        gain_dB = resonance_gains[idx] / 30
+    else:
+        freq_dB, gain_dB = 0, 0
+    return [freq_dB, gain_dB]
 def state_error(ek):
-    weights = 0.7 ** np.arange(len(ek))  # 產生一個 0.7**i 的數列
-    sumError=np.sum(abs(ek) * weights)
-    return   [np.log1p(sumError)/10]
-def reset_buffers(num_path_district, pdl):
-    data_buffer = [None] * num_path_district  # 儲存計算reward前的資料
-    ek_buffer = np.zeros((3, pdl))            # 模擬誤差延遲進入
-    X0 = 0                                     # 初始狀態
-    iter_r = 0                                 # 累計 reward
-    error = []                                 # 儲存每步誤差
-    return data_buffer, ek_buffer, X0, iter_r, error
+    """計算加權誤差的對數作為狀態。"""
+    weights = 0.7 ** np.arange(len(ek))
+    sum_error = np.sum(np.abs(ek) * weights)
+    return [np.log1p(sum_error) / 10]
+def reset_episode_buffers(num_segments, segment_len):
+    """重置每輪訓練的暫存區。"""
+    data_buffer = [None] * num_segments  # 儲存計算 reward 前的資料
+    ek_buffer = np.zeros((3, segment_len))  # 模擬誤差延遲 (3 步緩衝)
+    X0 = 0  # 初始狀態
+    episode_reward = 0  # 累計 reward
+    error_history = []  # 儲存每步誤差
+    return data_buffer, ek_buffer, X0, episode_reward, error_history
+def get_lr_for_iteration(total_iter):
+    """根據累計輪數回傳對應的學習率。"""
+    cumulative = 0
+    for lr, rounds in lr_schedule:
+        cumulative += rounds
+        if total_iter <= cumulative:
+            return lr
+    return lr_schedule[-1][0]  # 超過排程範圍則用最後一個
 #endregion
 
-######   創造實例    ######
+# ============================================================================
+#                             創造實例
+# ============================================================================
 #region
 agent = PPO(n_states , numFC*2, bound, PPO_parameter, device)
 replay_buffer=ReplayBuffer(PPO_parameter.batch_size)
@@ -161,12 +205,14 @@ training_path=path_model.training_path()
 testpath=path_model.test_path()
 testpath2=path_model.test_path2()
 
-costfunction_x=CNC.Costfunction(CNC_parameter, x_polegain, ID_Plant, testpath, pdl, numFC, num_low_freq_FC)#manual_FC.copy()
-PlotExporter=CNC.PlotExporter()
+costfunction_x=CNC.Costfunction(CNC_parameter, x_polegain, ID_Plant, testpath, pdl, numFC, num_low_freq_FC)
+PlotExporter = CNC.PlotExporter() if enable_plot else None
 #endregion
 
-#####   讀取資料   ####
- #region
+# ============================================================================
+#                             讀取資料
+# ============================================================================
+#region
 if(read==True):
     try:
         warnings.filterwarnings("ignore", category=FutureWarning)
@@ -198,99 +244,122 @@ if(read==True):
 else : 
     start_iteration =0
     print(f"不引進model，從0訓練")
- #endregion
+#endregion
 
-######   訓練本體   ######
-#創造空容器
+# ============================================================================
+#                             訓練本體
+# ============================================================================
 #region
 all_iter_r = []
 FC = np.zeros((numFC, 2))
+current_lr = None  # 記錄當前學習率，用於偵測切換
 #endregion
 
-for iteration in range(1, PPO_parameter.iteration+1):#總輪數
-    if PPO_parameter.learning_rate==1e-5 : Plant=model_x.ID_Plant()
-    else:Plant=model_x.random_Plant()
-    #每一輪的初始狀態
-    path=training_path[iteration%len(training_path)]
-    path_index=(iteration-1)%pdl
-    #path=testpath
-    #path_index=0
-    num_path_district=int((len(path)-path_index)/pdl)
-    prev_dominant_freq=0.1#初始遮罩設定
-    #暫存區歸零 
+for iteration in range(1, total_iterations + 1):
+    # 檢查是否需要切換學習率（基於累計輪數）
+    current_total_iter = start_iteration + iteration
+    lr = get_lr_for_iteration(current_total_iter)
+    if lr != current_lr:
+        current_lr = lr
+        agent.set_learning_rate(lr)
+        print(f">>> 累計 {current_total_iter} 輪，學習率切換為 {lr}")
+    
+    # 選擇模型：高學習率用 ID 模型，低學習率用隨機模型
+    if current_lr >= 1e-5:
+        Plant = model_x.ID_Plant()
+    else:
+        Plant = model_x.PRE_Plant()
+    
+    # 每輪初始狀態
+    path = training_path[iteration % len(training_path)]
+    path_index = (iteration - 1) % pdl
+    num_segments = int((len(path) - path_index) / pdl)
+    dominant_freq = 0.1  # 初始 FFT 遮罩頻率
+    
+    # 暫存區歸零
     costfunction_x.initialize()
-    data_buffer, ek_buffer, X0, iter_r, error = reset_buffers(num_path_district, pdl)
-    #準備第一個state
-    path_FFT_magnitude, prev_dominant_freq, _=path_FFT(path, path_index , prev_dominant_freq)
-    last_solved_FC=costfunction_x.last_solved_FC
-    s=np.concatenate([state_action(last_solved_FC), path_FFT_magnitude, np.zeros(3)])#合成第一組狀態
-    for step in range(num_path_district+1):#開始產生歷程，因為Error有延遲所以要多兩步收集資料
-        #判斷是否發散
-        if np.sqrt(  np.mean(  (ek_buffer[step%3])**2  )  ) > max_error_um:#判斷Error有沒有發散
-            num_path_district=step-1
+    data_buffer, ek_buffer, X0, episode_reward, error_history = reset_episode_buffers(num_segments, pdl)
+    # 準備第一個 state
+    path_FFT_mag, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
+    last_solved_FC = costfunction_x.last_solved_FC
+    s = np.concatenate([state_action(last_solved_FC), path_FFT_mag, np.zeros(3)])
+    
+    for step in range(num_segments + 1):  # +1 因為誤差有延遲
+        # 檢查是否發散
+        rms_error = np.sqrt(np.mean(ek_buffer[step % 3] ** 2))
+        if rms_error > max_error_um:
+            num_segments = step - 1
             break
-        if(step>=num_path_district):
+        if step >= num_segments:
             continue
-        #產生動作
-        a = np.array(agent.choose_action(s))      # dB
-        action = 10.0 ** (a / 20.0)               # 線性倍率
-        FC[:, 0] = action[:numFC]                 # 頻率
-        FC[:, 1] = action[numFC:]                 # 增益
-        sorted_indices = np.argsort(FC[:, 0])  #排序FC的索引
-        FC = FC[sorted_indices]  # 按照索引排序FC
-        #是否合成新控制器並模擬運行
-        status, CC, ek_hat, manual_add_FC=costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step%3])
+        
+        # 產生動作 (Actor 輸出 dB → 轉換為線性值)
+        a = np.array(agent.choose_action(s))
+        action_linear = 10.0 ** (a / 20.0)
+        FC[:, 0] = action_linear[:numFC]  # 頻率
+        FC[:, 1] = action_linear[numFC:]  # 增益
+        FC = FC[np.argsort(FC[:, 0])]     # 按頻率排序
+        
+        # 合成控制器並模擬
+        status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step % 3])
+        path_segment = path[path_index:path_index + pdl]
+        X0, ek_buffer[(step + 2) % 3, :], _ = CNC.SimulateResponse(path_segment.copy(), CC.copy(), Plant['v2p'], X0, Ts)
+        if enable_plot:
+            PlotExporter.plot_frame(CC, Plant['v2p'], FC, manual_add_FC)
 
-        CC_tf = ctrl.ss2tf(CC)
-        den = np.array(CC_tf.den[0][0], dtype=np.float32)
-        cdl=len(den)#controller_data_len
-        num = np.array(CC_tf.num[0][0], dtype=np.float32)
-        num = np.pad(num, (0, cdl - len(num)), mode='constant')#補齊避免分子階數不足
-        print(den,num)
+        # 計算下一步狀態並存入 buffer
+        path_FFT_mag, dominant_freq, _ = path_FFT(path, path_index + pdl, dominant_freq)
+        s_ = np.concatenate([
+            state_action(FC),
+            path_FFT_mag,
+            state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[(step + 1) % 3]),
+            state_error(ek_buffer[(step + 1) % 3])
+        ])
+        data_buffer[step] = (
+            s.copy(), a.copy(), s_.copy(), FC.copy(), 
+            status, CC.copy(), path_segment.copy(), ek_buffer[(step + 2) % 3, :].copy()
+        )
+        
+        # 準備下一步
+        s = s_
+        path_index += pdl
 
-        path_district=path[path_index : path_index+pdl]
-        X0, ek_buffer[(step+2)%3 , :], _=CNC.SimulateResponse(path_district.copy(), CC.copy(), Plant['v2p'], X0,Ts)#模擬輸出Controller給工具機
-        #PlotExporter.plot_frame(CC, Plant['v2p'], FC, manual_add_FC)#製作Gif
+    # 從 data_buffer 計算 reward 並放進 replay_buffer
+    for i in range(num_segments):
+        s, a, s_, FC, status, CC, path_segment, ek = data_buffer[i]
+        error_history.append(ek.copy())
+        r = costfunction_x.reward(FC, status, CC, ek, visual=0)
+        episode_reward += r
+        replay_buffer.push(s.copy(), a.copy(), r, s_.copy())
+    
+    print(f"Iteration: {iteration:<5} Reward: {episode_reward:.2f}\n")
+    if enable_plot:
+        PlotExporter.save_mp4()
+        PlotExporter.plot_error(error_history)
 
-        #資料存進data_buffer
-        path_FFT_magnitude, prev_dominant_freq, _=path_FFT(path, path_index+pdl, prev_dominant_freq)
-        s_ = np.concatenate([ state_action(FC), path_FFT_magnitude, state_maxResonance(CC, ID_Plant["v2p"], Ts, path_district, ek_buffer[(step+1)%3]), state_error(ek_buffer[(step+1)%3])])
-        data_buffer[step]=(s.copy(), a.copy(), s_.copy(), FC.copy(), status, CC.copy(), path_district.copy(), ek_buffer[(step+2)%3 , :].copy())
-        #準備下一步
-        s=s_
-        path_index=path_index+pdl
-
-    #從data_buffer計算reward並放進replay_buffer
-    for i in range(0,num_path_district):
-        s, a, s_, FC, status, CC, path_district, ek=data_buffer[i]
-        error.append(ek.copy())
-        r=costfunction_x.reward(FC, status, CC, ek, visual=0)
-        iter_r+=r
-        replay_buffer.push(s.copy(), a.copy() , r , s_.copy())
-        #print(f"iteration:{iteration:<5}step:{i+1:<3}  status:{status:13}reward:{r:2f}")
-    print(f"Iteration:{iteration:<5}Reward:{iter_r:2f}\n")
-    #PlotExporter.save_mp4()
-    #PlotExporter.plot_error(error)
-
-    #訓練
+    # 訓練 PPO
     agent.training(replay_buffer)
-    #儲存model
-    if  iteration % 100 == 0:
-        save_path=f'../Model/{save_file_name}'
+    
+    # 每 100 輪儲存模型
+    if iteration % 100 == 0:
+        save_path = f'../Model/{save_file_name}'
         model_dict = torch.load(save_path) if os.path.exists(save_path) else {}
-        key = f'iteration:{iteration+start_iteration}'
+        key = f'iteration:{iteration + start_iteration}'
         model_dict[key] = {
             'reward': all_iter_r[-100:],
             'actor': agent.actor_model.state_dict(),
             'critic': agent.critic_model.state_dict(),
-            'FC':costfunction_x.last_solved_FC
+            'FC': costfunction_x.last_solved_FC
         }
         torch.save(model_dict, save_path)
-    #把return存入列表
-    all_iter_r.append(iter_r if iteration == 1 else all_iter_r[-1] * 0.9 + iter_r * 0.1)#平滑顯示資料
+    
+    # 平滑後存入列表
+    smoothed_reward = episode_reward if iteration == 1 else all_iter_r[-1] * 0.9 + episode_reward * 0.1
+    all_iter_r.append(smoothed_reward)
 
-time_finish=time.time()
+# 訓練結束
+time_finish = time.time()
 plt.title("Return")
-plt.plot(np.arange( len(all_iter_r)), all_iter_r)
+plt.plot(np.arange(len(all_iter_r)), all_iter_r)
 plt.show()
-Time_show(time_start, time_finish)
+show_elapsed_time(time_start, time_finish)
