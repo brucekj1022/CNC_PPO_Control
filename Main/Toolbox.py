@@ -389,8 +389,19 @@ def plot_experiment_openloop():
 
 
 def generate_test_controller():
-    """產生測試控制器：中央控制器 + 二階共振系統，用於 Runtime.py"""
+    """產生測試控制器：中央控制器 + 二階共振系統，用於 Runtime.py
+    
+    ⚠️ 警告：此方法產生的控制器會使閉迴路極點靠近虛軸，
+    導致阻尼比過低（例如 +6dB 增益時 min_zeta≈0.22），
+    可能在實際機台上引起共振。建議使用前先用 tool 9 檢查極點分布。
+    """
     import argparse
+    
+    print("⚠️" + "="*56 + "⚠️")
+    print("警告：此方法產生的控制器可能導致閉迴路極點阻尼比過低！")
+    print("      例如 +6dB 增益時 min_zeta ≈ 0.22 (RISK)")
+    print("      建議使用前先用 tool 9 檢查極點分布")
+    print("⚠️" + "="*56 + "⚠️")
     
     np.set_printoptions(precision=15, suppress=True)
     
@@ -498,7 +509,7 @@ def generate_test_controller():
         plt.tight_layout()
         plt.show()
         
-        # 2. 中央控制器 + ID_Plant (開迴路)
+        # 2. 中央控制器 + Nominal_Plant (開迴路)
         plt.figure(figsize=FIG_SIZE_SINGLE)
         OLoop_central = ctrl.minreal(ctrl.ss2tf(CC_central * ID_Plant['v2p']), tol=1e-3, verbose=False)
         mag_oc, _, oma_oc = ctrl.bode(OLoop_central, dB=True, omega_limits=[1e-2, 3e3], plot=False)
@@ -510,7 +521,7 @@ def generate_test_controller():
         plt.ylim(-70, 70)
         plt.xlabel("Frequency (rad/s)")
         plt.ylabel("Magnitude (dB)")
-        plt.title("Central Controller + ID_Plant (Open Loop)")
+        plt.title("Central Controller + Nominal_Plant\n(Open Loop)")
         plt.tight_layout()
         plt.show()
         
@@ -518,35 +529,115 @@ def generate_test_controller():
         plt.figure(figsize=FIG_SIZE_SINGLE)
         mag_r, _, oma_r = ctrl.bode(CC_tf, dB=True, omega_limits=[1e-2, 3e3], plot=False)
         plt.plot(oma_r, 20*np.log10(mag_r), color='r', linewidth=2)
-        plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7, label=f'Resonance @ {omega} rad/s')
+        plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7)
         plt.grid()
         plt.xscale('log')
         plt.xlim(1, 1e4)
         plt.ylim(-70, 70)
         plt.xlabel("Frequency (rad/s)")
         plt.ylabel("Magnitude (dB)")
-        plt.title("Test Controller (Central + Resonance)")
-        plt.legend()
+        plt.title("Test Controller + Nominal_Plant\n(Open Loop)")
         plt.tight_layout()
         plt.show()
         
-        # 4. 新測試控制器 + ID_Plant (開迴路)
+        # 4. 新測試控制器 + Nominal_Plant (開迴路)
         plt.figure(figsize=FIG_SIZE_SINGLE)
         OLoop_resonance = ctrl.minreal(ctrl.ss2tf(CC_with_resonance * ID_Plant['v2p']), tol=1e-3, verbose=False)
         mag_or, _, oma_or = ctrl.bode(OLoop_resonance, dB=True, omega_limits=[1e-2, 3e3], plot=False)
         plt.plot(oma_or, 20*np.log10(mag_or), color='r', linewidth=2)
         plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
-        plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7, label=f'Resonance @ {omega} rad/s')
+        plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7)
         plt.grid()
         plt.xscale('log')
         plt.xlim(1, 1e4)
         plt.ylim(-70, 70)
         plt.xlabel("Frequency (rad/s)")
         plt.ylabel("Magnitude (dB)")
-        plt.title("Test Controller + ID_Plant (Open Loop)")
-        plt.legend()
+        plt.title("Test Controller + Nominal_Plant\n(Open Loop)")
         plt.tight_layout()
         plt.show()
+
+
+def plot_experiment_OLoop_poles():
+    """載入實驗數據並繪製閉迴路極點圖"""
+    # 彈出檔案選擇視窗
+    root = tk.Tk()
+    root.withdraw()
+    
+    initial_dir = os.path.join("..", "ExperimentData")
+    if not os.path.exists(initial_dir):
+        initial_dir = ".."
+    
+    data_path = filedialog.askopenfilename(
+        title="選擇實驗數據檔案 (runtime_data.npz 或 simulation_data.npz)",
+        initialdir=initial_dir,
+        filetypes=[("NumPy檔案", "*.npz"), ("所有檔案", "*.*")]
+    )
+    root.destroy()
+    
+    if not data_path:
+        print("未選擇檔案")
+        return
+    
+    print(f"選擇的檔案: {data_path}")
+    
+    try:
+        data = np.load(data_path, allow_pickle=True)
+        CC_list = data['CC_list']
+        ID_Plant_v2p = data['ID_Plant_v2p'].item()
+        Ts = float(data['Ts'])
+        
+        # 使用第一個控制器（假設所有步的控制器相同或只看第一個）
+        CC = CC_list[0]
+        
+        # 閉迴路系統
+        CL = ctrl.feedback(CC * ID_Plant_v2p, 1)
+        poles_d = CL.poles()
+        
+        # 轉換到連續域（所有極點）
+        poles_c = np.log(poles_d) / Ts
+        
+        print(f"Total poles: {len(poles_c)}")
+        
+        # 畫極點圖
+        fig, ax = plt.subplots(figsize=FIG_SIZE_SINGLE)
+        
+        # 畫所有極點
+        ax.scatter(poles_c.real, poles_c.imag, s=100, c='blue', marker='x', linewidths=2)
+        
+        # 標出所有極點數值
+        for p in poles_c:
+            if abs(p.imag) > 1:
+                label = f'({p.real:.0f}, {p.imag:.0f}j)'
+            else:
+                label = f'({p.real:.0f}, 0)'
+            ax.annotate(label, (p.real, p.imag), textcoords='offset points', xytext=(5, 5), fontsize=7)
+        
+        # 畫軸線
+        ax.axvline(x=0, color='k', linestyle='-', linewidth=1)
+        ax.axhline(y=0, color='k', linestyle='-', linewidth=1)
+        
+        ax.set_xlabel('Real (1/s)')
+        ax.set_ylabel('Imaginary (rad/s)')
+        ax.set_title('Closed-Loop Poles (Test Controller)')
+        ax.grid(True, alpha=0.3)
+        
+        # 自動調整範圍包含所有極點
+        margin = 0.1
+        real_min, real_max = poles_c.real.min(), poles_c.real.max()
+        imag_min, imag_max = poles_c.imag.min(), poles_c.imag.max()
+        real_range = max(real_max - real_min, 100)
+        imag_range = max(imag_max - imag_min, 100)
+        ax.set_xlim(real_min - margin * real_range - 500, real_max + margin * real_range + 500)
+        ax.set_ylim(imag_min - margin * imag_range - 500, imag_max + margin * imag_range + 500)
+        
+        plt.tight_layout()
+        plt.show()
+        
+    except FileNotFoundError:
+        print(f"找不到檔案: {data_path}")
+    except Exception as e:
+        print(f"載入失敗: {e}")
 
 
 # ============================================================
@@ -561,7 +652,8 @@ MENU = {
     '5': ('隨機共振峰值上下界', plot_resonance_bounds),
     '6': ('動態FFT遮罩測試（產生動畫）', dynamic_fft_mask_animation),
     '7': ('載入實驗數據繪製開迴路波德圖', plot_experiment_openloop),
-    '8': ('產生測試控制器（中央控制器+共振）', generate_test_controller),
+    '8': ('產生測試控制器 ⚠️低阻尼可能引起共振', generate_test_controller),
+    '9': ('載入實驗數據繪製閉迴路極點圖', plot_experiment_OLoop_poles),
 }
 
 

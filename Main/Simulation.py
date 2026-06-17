@@ -21,10 +21,10 @@ time_start=time.time()
 read=True
 use_switch_model = False # True: 雙模型切換, False: 單模型
 if use_switch_model:
-    read_file_name1='Modelunc1.pth'  # 追蹤模型
-    read_file_name2='Modelran1.pth'  # 共振模型
+    read_file_name1='ModelBUE1.pth'  # 追蹤模型
+    read_file_name2='ModelPRE1.pth'  # 共振模型
 else:
-    read_file_name='Modelran1.pth'
+    read_file_name='ModelPRE1.pth'
 #endregion
 
 ######   參數區域    ######

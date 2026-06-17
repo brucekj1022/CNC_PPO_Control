@@ -24,10 +24,10 @@ time_start=time.time()
 read=True
 use_switch_model = False  # True: 雙模型切換, False: 單模型
 if use_switch_model:
-    read_file_name1='Modelunc1.pth'  # 追蹤模型
-    read_file_name2='Modelran1.pth'  # 共振模型
+    read_file_name1='ModelBUE1.pth'  # 追蹤模型
+    read_file_name2='ModelPRE1.pth'  # 共振模型
 else:
-    read_file_name='Modelunc.pth'
+    read_file_name='ModelBUE1.pth'
 #endregion
 
 ######   參數區域    ######
@@ -290,34 +290,19 @@ X_resonance_old=[1.24776671e+04, -2.82535941e+04, 2.20793412e+04, -6.01791813e+0
            -6.82492589e-07, 6.03972590e-23]
 CC_X_resonance_old = ctrl.tf2ss(ctrl.TransferFunction(X_resonance_old[:13], X_resonance_old  [13:], Ts))
 
-#X軸本身機台共振測試控制器(新) omega=800, zeta=0.05
-# gain=3 (小共振)
-X_resonance_g3 = [1861.715550729014, -5062.418655889311, 6145.8167941565935, -3716.5382114685676, 937.8455547143777,
+#X軸本身機台共振測試控制器 omega=800, zeta=0.7 gain=6dB
+X_resonance_g6_w800 = [1861.7155507290054, -2166.105184673084, -1249.790483323949, 2592.1958803485404, -933.7350075469001,
                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                  1.0, -2.6240934309635646, 3.3337290483473847, -2.217212039534731, 0.7807787244052766,
-                  -0.0991114316607929, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-CC_X_resonance_g3 = ctrl.tf2ss(ctrl.TransferFunction(X_resonance_g3[:15], X_resonance_g3[15:], Ts))
+                  1.0, -2.2449297598020537, 2.2500698943973005, -1.189312227493335, 0.32829023029552695,
+                  -0.03503139955614494, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+CC_X_resonance_g6_w800 = ctrl.tf2ss(ctrl.TransferFunction(X_resonance_g6_w800[:15], X_resonance_g6_w800[15:], Ts))
 
-# gain=6 (中小共振)
-X_resonance_g6 = [1861.7155507290172, -4869.892976645662, 5681.148773381589, -3335.257315036361, 828.7069998082437,
-                  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                  1.0, -2.624093430963564, 3.333729048347383, -2.2172120395347292, 0.7807787244052758,
-                  -0.09911143166079275, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-CC_X_resonance_g6 = ctrl.tf2ss(ctrl.TransferFunction(X_resonance_g6[:15], X_resonance_g6[15:], Ts))
-
-# gain=9 (中等共振)
-X_resonance_g9 = [1861.7155507290104, -4677.367297445485, 5216.480752690237, -2953.9764186765537, 719.5684449287203,
-                  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                  1.0, -2.6240934309635646, 3.3337290483473843, -2.2172120395347314, 0.7807787244052766,
-                  -0.09911143166079292, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-CC_X_resonance_g9 = ctrl.tf2ss(ctrl.TransferFunction(X_resonance_g9[:15], X_resonance_g9[15:], Ts))
-
-# gain=12 (大共振)
-X_resonance_g12 = [1861.715550729013, -4484.841618155055, 4751.812731883474, -2572.695522236054, 610.4298900356185,
-                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                   1.0, -2.6240934309635646, 3.3337290483473843, -2.2172120395347314, 0.7807787244052766,
-                   -0.09911143166079292, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-CC_X_resonance_g12 = ctrl.tf2ss(ctrl.TransferFunction(X_resonance_g12[:15], X_resonance_g12[15:], Ts))
+#X軸本身機台共振測試控制器 omega=800, zeta_num=2.0, zeta_den=1.0 (+6dB, min_zeta=0.22)
+X_boost_6db = [2621.599518367347, -5301.486422448978, 3323.8526306123026, -313.8304183677833, -236.91878571373252,
+               0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+               1.0, -2.141080757142856, 1.9741278693877526, -0.9345653442857125, 0.21875108693877493,
+               -0.019720309591836665, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+CC_X_boost_6db = ctrl.tf2ss(ctrl.TransferFunction(X_boost_6db[:15], X_boost_6db[15:], Ts))
 
 #實驗設定
 path=testpath
@@ -518,14 +503,5 @@ np.savez_compressed(save_path, **experiment_data, allow_pickle=True)
 print(f"\n實驗數據已保存至: {save_path}")
 print(f"實驗時長: {int(experiment_duration//60)}分{int(experiment_duration%60)}秒")
 
-#做GIF（使用data_collector中的數據）
-for i in range(len(data_collector['CC_list'])):
-    PlotExporter.plot_frame(
-        data_collector['CC_list'][i],
-        ID_Plant["v2p"],
-        data_collector['FC_list'][i],
-        data_collector['manual_FC_list'][i]
-    )
-    PlotExporter.save_mp4()
 #畫出誤差
 PlotExporter.plot_error(data_collector['error_list'])

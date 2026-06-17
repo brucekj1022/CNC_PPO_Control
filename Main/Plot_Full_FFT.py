@@ -11,9 +11,9 @@ import scipy.signal
 # 配置參數
 # ============================================================
 HIGHPASS_FREQ_HZ = 50  # 高通濾波頻率 (Hz)，設為 None 則不濾波
-TIME_START = None      # 起始時間 (秒)，設為 None 則從頭開始
-TIME_END = None        # 結束時間 (秒)，設為 None 則到最後
-OUTLIER_THRESHOLD = 1  # 異常值門檻（標準差倍數），設為 None 則不移除
+TIME_START = 0      # 起始時間 (秒)，設為 None 則從頭開始
+TIME_END = 3        # 結束時間 (秒)，設為 None 則到最後
+OUTLIER_THRESHOLD = None  # 異常值門檻（標準差倍數），設為 None 則不移除
 # ============================================================
 
 

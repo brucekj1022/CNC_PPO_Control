@@ -26,7 +26,7 @@ import CNC
 # ============================================================
 # 執行模式設定
 # ============================================================
-BATCH_MODE = True  # True = 批次處理（使用 BATCH_EXPERIMENTS）, False = 手動選擇
+BATCH_MODE = False  # True = 批次處理（使用 BATCH_EXPERIMENTS）, False = 手動選擇
 
 # 手動模式設定（BATCH_MODE = False 時使用）
 SHOW_EVENT_LINES = True   # 設為 True 顯示所有事件線，False 則不顯示
@@ -35,15 +35,16 @@ RESONANCE_TIME = 3        # 共振檢測時間（秒），設為 None 則不顯�
 # 批次處理配置（BATCH_MODE = True 時使用）
 # 格式: {
 #     'path': 資料夾路徑（相對於 ExperimentData 或絕對路徑）,
-#     'mode': 'single' 或 'multi',
-#     'show_events': True/False,
-#     'resonance_time': 秒數或 None
+#     'mode': 'single' 或 'multi'單實驗或多實驗統整,
+#     'show_events': True/False 畫不畫事件線（共振檢測、切換控制器、RSS添加FC、控制器應用等),
+#     'resonance_time': 秒數或 None （共振加入時間線位置，設為 None 則不顯示）,
 # }
 BATCH_EXPERIMENTS = [
     # === 單實驗 ===
     {'path': 'test1-1', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
     {'path': 'test1-2', 'mode': 'single', 'show_events': False, 'resonance_time': None},
     {'path': 'test1-3', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': 'test1第二次', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
     {'path': 'test2-1', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
     {'path': 'test3-1', 'mode': 'single', 'show_events': False, 'resonance_time': None},
     {'path': 'test4-1', 'mode': 'single', 'show_events': False, 'resonance_time': None},
@@ -75,13 +76,19 @@ FIG_SIZE_SINGLE = (7.68, 5.76)    # 768x576
 FIG_SIZE_WIDE = (11.52, 5.76)     # 1152x576
 FIG_SIZE_MULTI = (10.24, 10.24)   # 1024x1024
 
-# 字體大小設定
+# 字體大小（圖片越小，字體相對越大）
+FONT_TITLE = 24    # 圖表標題
+FONT_LABEL = 20    # 座標軸標籤
+FONT_TICK = 18     # 刻度數字
+FONT_LEGEND = 18   # 圖例
+
+# 套用字體設定
 matplotlib.rcParams.update({
-    'axes.titlesize': 24,     # 圖表標題
-    'axes.labelsize': 20,     # 座標軸標籤
-    'xtick.labelsize': 18,    # 刻度數字
-    'ytick.labelsize': 18,    # 刻度數字
-    'legend.fontsize': 18,    # 圖例
+    'axes.titlesize': FONT_TITLE,
+    'axes.labelsize': FONT_LABEL,
+    'xtick.labelsize': FONT_TICK,
+    'ytick.labelsize': FONT_TICK,
+    'legend.fontsize': FONT_LEGEND,
 })
 
 
@@ -735,16 +742,17 @@ def display_step_details(data, return_string=False):
         是否返回字符串而不是打印
     """
     lines = []
-    lines.append("=" * 60)
+    lines.append("=" * 100)
     lines.append("每步詳細狀況")
-    lines.append("=" * 60)
-    lines.append(f"{'Step':<6} | {'Status':<15} | {'Freq (rad/s)':<20} | {'Mag (dB)':<12} | {'Model':<15}")
-    lines.append("-" * 60)
+    lines.append("=" * 100)
+    lines.append(f"{'Step':<6} | {'Status':<15} | {'Freq (rad/s)':<20} | {'Mag (dB)':<12} | {'Model':<15} | {'RSS FC (rad/gain)'}")
+    lines.append("-" * 100)
     
     status_list = data['status_list']
     resonance_freq_list = data['resonance_freq_list']
     resonance_gain_list = data['resonance_gain_list']
     model_used = data.get('model_used', [])
+    manual_FC_list = data.get('manual_FC_list', [])
     
     for step in range(len(status_list)):
         status = status_list[step]
@@ -754,15 +762,24 @@ def display_step_details(data, return_string=False):
         
         freq_display = f"{freq_rad_per_s:.2f}" if freq_rad_per_s > 0 else "0"
         
+        # 格式化 RSS FC 點
+        if step < len(manual_FC_list) and manual_FC_list[step] is not None and len(manual_FC_list[step]) > 0:
+            manual_fc = manual_FC_list[step]
+            fc_strs = [f"({fc[0]:.1f}/{fc[1]:.3f})" for fc in manual_fc]
+            rss_fc_display = " ".join(fc_strs)
+        else:
+            rss_fc_display = "-"
+        
         lines.append(
             f"{step:<6} | "
             f"{status:<15} | "
             f"{freq_display:<20} | "
             f"{mag_dB:<12.5g} | "
-            f"{model:<15}"
+            f"{model:<15} | "
+            f"{rss_fc_display}"
         )
     
-    lines.append("\n" + "=" * 60 + "\n")
+    lines.append("\n" + "=" * 100 + "\n")
     
     text = "\n".join(lines)
     if return_string:
@@ -778,7 +795,7 @@ def plot_reference_path(data, experiment_folder):
     t = np.arange(0, len(path) * Ts, Ts)
     
     inputdata_plot = np.column_stack((t, path))
-    plt.figure(figsize=FIG_SIZE_SINGLE)
+    plt.figure(figsize=FIG_SIZE_WIDE)
     plt.plot(inputdata_plot[:, 0], inputdata_plot[:, 1])
     plt.title('Path')
     plt.xlabel('Time (s)')
