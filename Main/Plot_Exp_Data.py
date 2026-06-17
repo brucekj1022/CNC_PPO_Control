@@ -26,7 +26,7 @@ import CNC
 # ============================================================
 # 執行模式設定
 # ============================================================
-BATCH_MODE = False  # True = 批次處理（使用 BATCH_EXPERIMENTS）, False = 手動選擇
+BATCH_MODE = True  # True = 批次處理（使用 BATCH_EXPERIMENTS）, False = 手動選擇
 
 # 手動模式設定（BATCH_MODE = False 時使用）
 SHOW_EVENT_LINES = True   # 設為 True 顯示所有事件線，False 則不顯示
@@ -40,31 +40,32 @@ RESONANCE_TIME = 3        # 共振檢測時間（秒），設為 None 則不顯�
 #     'resonance_time': 秒數或 None （共振加入時間線位置，設為 None 則不顯示）,
 # }
 BATCH_EXPERIMENTS = [
-    # === 單實驗 ===
-    {'path': 'test1-1', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
-    {'path': 'test1-2', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    {'path': 'test1-3', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    {'path': 'test1第二次', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
-    {'path': 'test2-1', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
-    {'path': 'test3-1', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    {'path': 'test4-1', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    {'path': 'test4-2', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    {'path': 'test5-1', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    {'path': 'test6-1模', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    {'path': 'test6-2模', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    
+    # === 主實驗 ===
+    {'path': '實驗1', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
+    {'path': '實驗2', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
+    {'path': '實驗3', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗4', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗5', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+
     # === 雙模型模擬 ===
     {'path': '雙模型模擬/BUE_0~1Hz_有共振', 'mode': 'single', 'show_events': True, 'resonance_time': 0},
     {'path': '雙模型模擬/BUE_0~1Hz_無共振', 'mode': 'single', 'show_events': False, 'resonance_time': None},
     {'path': '雙模型模擬/PRE_0~1Hz_有共振', 'mode': 'single', 'show_events': True, 'resonance_time': 0},
     {'path': '雙模型模擬/PRE_0~1Hz_無共振', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    
-    # === 多實驗統計 ===
-    {'path': 'test1多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
-    {'path': 'test2多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
-    {'path': 'test4多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
-    {'path': 'test6-1多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
-    {'path': 'test6-2多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+
+    # === 輔助實驗 ===
+    {'path': '實驗輔助資料/實驗1輔助：無共振固定BUE', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗輔助資料/實驗1輔助：無共振固定PRE', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗輔助資料/實驗4輔助：固定BUE',       'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗輔助資料/實驗6：固定BUE',           'mode': 'single', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗輔助資料/實驗6：固定PRE',           'mode': 'single', 'show_events': False, 'resonance_time': None},
+
+    # === 多次模擬統計 ===
+    {'path': '實驗輔助資料/實驗1多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗輔助資料/實驗2多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗輔助資料/實驗4多次模擬', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗輔助資料/實驗6多次模擬：固定BUE', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
+    {'path': '實驗輔助資料/實驗6多次模擬：固定PRE', 'mode': 'multi', 'show_events': False, 'resonance_time': None},
 ]
 
 # ============================================================

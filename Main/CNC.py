@@ -149,7 +149,7 @@ def find_resonance(CC, plant, Ts, path_section, error):
 
 class CNCModel:
     """CNC 馬達模型類別，提供系統鑑別模型、測試模型、不確定性模型等。"""
-    
+
     def __init__(self, axis, Ts):
         self.Ts = Ts
         self.axis = axis
@@ -187,8 +187,8 @@ class CNCModel:
         )
         resonance_tf = ctrl.sample_system(resonance_tf, self.Ts)
         v2p = v2p * resonance_tf
-        
-        return {'v2p': v2p, 'Ts': self.Ts}
+        v2v = base_plant['v2v'] * resonance_tf
+        return {'v2p': v2p, 'v2v': v2v, 'Ts': self.Ts}
 
     def BUE_Plant(self):
         """從 Delta_Data.mat 隨機選取一組不確定性模型 (Base Uncertainty Ensemble)。"""
@@ -203,10 +203,12 @@ class CNCModel:
                     del p_new[idx]
             return np.array(z_new, dtype=complex), np.array(p_new, dtype=complex)
         
-        # 取得基礎模型的 zpk
+        # 取得基礎模型的 zpk (v2p 與 v2v 同步)
         base_plant = self.ID_Plant()
-        num, den = base_plant["v2p"].num[0][0], base_plant["v2p"].den[0][0]
-        IDz, IDp, IDk = tf2zpk(num, den)
+        num_p, den_p = base_plant["v2p"].num[0][0], base_plant["v2p"].den[0][0]
+        IDz_p, IDp_p, IDk_p = tf2zpk(num_p, den_p)
+        num_v, den_v = base_plant["v2v"].num[0][0], base_plant["v2v"].den[0][0]
+        IDz_v, IDp_v, IDk_v = tf2zpk(num_v, den_v)
 
         # 載入不確定性資料
         data = scipy.io.loadmat('Delta_Data.mat')
@@ -215,27 +217,31 @@ class CNCModel:
         k_all = data['k_all'].squeeze()
         Ts = float(data['Ts'])
 
-        # 合成所有不確定性模型
+        # 合成所有不確定性模型 (v2p 與 v2v 套用相同 delta)
         v2ps = []
+        v2vs = []
         for i in range(len(z_all)):
             deltaz = z_all[i].squeeze().astype(complex)
             deltap = p_all[i].squeeze().astype(complex)
             deltak = k_all[i].item()
-            z = np.concatenate([deltaz, IDz])
-            p = np.concatenate([deltap, IDp])
-            k = deltak * IDk
-            z_new, p_new = cancel_pole_zero(z, p, tol=1e-2)
-            v2ps.append(ctrl.zpk(z_new, p_new, k, Ts))
-        
-        # 隨機選擇一組
-        v2p = v2ps[np.random.randint(0, len(z_all))]
-        return {'v2p': v2p, 'Ts': self.Ts}
+            z_p = np.concatenate([deltaz, IDz_p])
+            p_p = np.concatenate([deltap, IDp_p])
+            z_v = np.concatenate([deltaz, IDz_v])
+            p_v = np.concatenate([deltap, IDp_v])
+            z_new_p, p_new_p = cancel_pole_zero(z_p, p_p, tol=1e-2)
+            z_new_v, p_new_v = cancel_pole_zero(z_v, p_v, tol=1e-2)
+            v2ps.append(ctrl.zpk(z_new_p, p_new_p, deltak * IDk_p, Ts))
+            v2vs.append(ctrl.zpk(z_new_v, p_new_v, deltak * IDk_v, Ts))
+
+        # 隨機選擇同一組
+        idx = np.random.randint(0, len(z_all))
+        return {'v2p': v2ps[idx], 'v2v': v2vs[idx], 'Ts': self.Ts}
 
     def PRE_Plant(self, min_omega=300, max_omega=1000):
         """回傳帶有隨機共振點的不確定性模型 (Perturbed Resonant Ensemble，頻率範圍: min_omega ~ max_omega rad/s)。"""
         base_plant = self.BUE_Plant()
         v2p = base_plant['v2p']
-
+        v2v = base_plant['v2v']
         # 隨機頻率 (低頻機率較高)
         omega_candidates = np.linspace(min_omega, max_omega, num=500)
         alpha = np.log(5) / (max_omega - min_omega)
@@ -259,8 +265,8 @@ class CNCModel:
         )
         resonance_tf = ctrl.sample_system(resonance_tf, self.Ts)
         v2p = v2p * resonance_tf
-        
-        return {'v2p': v2p, 'Ts': self.Ts}
+        v2v = v2v * resonance_tf
+        return {'v2p': v2p, 'v2v': v2v, 'Ts': self.Ts}
 
 
 class PathModel:

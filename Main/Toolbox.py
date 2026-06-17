@@ -90,55 +90,74 @@ matplotlib.rcParams.update({
 # ============================================================
 
 def plot_plant_ensemble():
-    """畫受控體集合波德圖，可選 BUE 或 PRE 模型與抽取次數"""
+    """受控體波德圖繪製，可選 ID / Test / BUE / PRE 模型"""
     print("\n選擇模型類型:")
-    print("  [1] BUE (Base Uncertainty Ensemble，無共振)")
-    print("  [2] PRE (Perturbed Resonant Ensemble，含隨機共振)")
+    print("  [1] ID Plant")
+    print("  [2] Test Plant")
+    print("  [3] BUE")
+    print("  [4] PRE")
     print("  [b] 返回")
     model_choice = input("請選擇: ").strip().lower()
     if model_choice == 'b':
         return
-    if model_choice not in ('1', '2'):
+    if model_choice not in ('1', '2', '3', '4'):
         print("無效選擇")
         return
-
-    count_input = input("抽取次數 [預設 100]: ").strip()
-    try:
-        count = int(count_input) if count_input else 100
-        if count <= 0:
-            raise ValueError
-    except ValueError:
-        print("無效輸入，使用預設值 100")
-        count = 100
 
     Ts = 0.001
     model_x = CNC.CNCModel('x', Ts)
 
-    if model_choice == '1':
-        model_name = "BUE"
-        get_plant = model_x.BUE_Plant
-    else:
-        model_name = "PRE"
-        get_plant = model_x.PRE_Plant
+    print("\n選擇轉移函數類型:")
+    print("  [1] v2p (速度→位置)")
+    print("  [2] v2v (速度→速度)")
+    tf_choice = input("請選擇 [預設 2]: ").strip()
+    tf_key = 'v2p' if tf_choice == '1' else 'v2v'
 
-    print(f"繪製 {model_name} 集合，共 {count} 次...")
     plt.figure(figsize=FIG_SIZE_SINGLE)
-    plant = model_x.ID_Plant()
-    mag, _, oma = ctrl.bode(plant['v2p'], dB=True, omega_limits=[1e-2, 3e3], plot=False)
-    plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2, label='ID Plant')
 
-    for _ in range(count):
-        Plant = get_plant()
-        mag, _, oma = ctrl.bode(Plant['v2p'], dB=True, omega_limits=[1e-2, 3e3], plot=False)
-        plt.plot(oma, 20 * np.log10(mag), color='r', linewidth=0.3, alpha=0.5)
+    if model_choice == '1':
+        plant = model_x.ID_Plant()
+        mag, _, oma = ctrl.bode(plant[tf_key], dB=True, omega_limits=[1e-2, 3e3], plot=False)
+        plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2, label='ID Plant')
+        plt.title(f"ID Plant {tf_key}")
+
+    elif model_choice == '2':
+        id_plant = model_x.ID_Plant()
+        mag, _, oma = ctrl.bode(id_plant[tf_key], dB=True, omega_limits=[1e-2, 3e3], plot=False)
+        plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2, label='ID Plant')
+        test_plant = model_x.test_Plant()
+        mag, _, oma = ctrl.bode(test_plant[tf_key], dB=True, omega_limits=[1e-2, 3e3], plot=False)
+        plt.plot(oma, 20 * np.log10(mag), color='r', linewidth=2, label='Test Plant')
+        plt.title(f"Test Plant {tf_key}")
+
+    else:
+        count_input = input("抽取次數 [預設 100]: ").strip()
+        try:
+            count = int(count_input) if count_input else 100
+            if count <= 0:
+                raise ValueError
+        except ValueError:
+            print("無效輸入，使用預設值 100")
+            count = 100
+
+        model_name = "BUE" if model_choice == '3' else "PRE"
+        get_plant = model_x.BUE_Plant if model_choice == '3' else model_x.PRE_Plant
+
+        print(f"繪製 {model_name} 集合，共 {count} 次...")
+        id_plant = model_x.ID_Plant()
+        mag, _, oma = ctrl.bode(id_plant[tf_key], dB=True, omega_limits=[1e-2, 3e3], plot=False)
+        plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2, label='ID Plant')
+        for _ in range(count):
+            plant = get_plant()
+            mag, _, oma = ctrl.bode(plant[tf_key], dB=True, omega_limits=[1e-2, 3e3], plot=False)
+            plt.plot(oma, 20 * np.log10(mag), color='r', linewidth=0.3, alpha=0.5)
+        plt.title(f"{model_name} {tf_key} Ensemble ({count} samples)")
 
     plt.grid()
     plt.xscale('log')
-    plt.xlim(1, 1e4)
-    plt.ylim(-70, 70)
+    plt.xlim(1e-2, 1e4)
     plt.xlabel("Frequency (rad/s)")
     plt.ylabel("Magnitude (dB)")
-    plt.title(f"{model_name} Plant Ensemble ({count} samples)")
     plt.legend()
     plt.tight_layout()
     plt.show()
@@ -147,7 +166,17 @@ def plot_plant_ensemble():
 def plot_or_export_path():
     """路徑繪圖與匯出工具 (支援選擇路徑類型、繪圖或匯出)"""
     import pandas as pd
-    
+
+    def _plot_single_path(t, path, title):
+        plt.figure(figsize=FIG_SIZE_SINGLE)
+        plt.plot(t[:len(path)], path, color='b')
+        plt.title(title)
+        plt.xlabel('Time (s)')
+        plt.ylabel('Magnitude (mm)')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
     Ts = 0.001
     path_model = CNC.PathModel(Ts)
     
@@ -300,18 +329,6 @@ def plot_or_export_path():
         print("無效選擇")
 
 
-def _plot_single_path(t, path, title):
-    """繪製單一路徑 (內部輔助函數)"""
-    plt.figure(figsize=FIG_SIZE_SINGLE)
-    plt.plot(t[:len(path)], path)
-    plt.title(title, fontsize=18)
-    plt.xlabel('Time (s)', fontsize=14)
-    plt.ylabel('Magnitude (mm)', fontsize=14)
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-
 def plot_resonance_bounds():
     """隨機共振峰值上下界"""
     Ts = 0.001
@@ -319,18 +336,24 @@ def plot_resonance_bounds():
 
     cnc_model = CNC.CNCModel(axis, Ts)
     ID_plant = cnc_model.ID_Plant()
-    v2p_ID = ID_plant['v2p']
+
+    print("\n選擇轉移函數類型:")
+    print("  [1] v2p (速度→位置)")
+    print("  [2] v2v (速度→速度)")
+    tf_choice = input("請選擇 [預設 1]: ").strip()
+    tf_key = 'v2v' if tf_choice == '2' else 'v2p'
+    v2p_ID = ID_plant[tf_key]
 
     omega_nyquist = 500 * 2 * np.pi
-    omega_range = np.logspace(0, np.log10(omega_nyquist), 1000)
+    omega_range = np.linspace(100, omega_nyquist, 1000)
 
-    mag_ID, phase_ID, omega_out = ctrl.frequency_response(v2p_ID, omega_range)
-    mag_ID_dB = 20 * np.log10(np.abs(mag_ID.flatten()))
+    mag_ID, _, omega_out = ctrl.bode(v2p_ID, omega_range, dB=True, plot=False)
+    mag_ID_dB = 20 * np.log10(np.abs(np.array(mag_ID).flatten()))
+    omega_flat = np.array(omega_out).flatten()
 
     min_resonance_omega = 300
     max_resonance_omega = 1000
 
-    omega_flat = omega_out.flatten()
     mask = (omega_flat >= min_resonance_omega) & (omega_flat <= max_resonance_omega)
     omega_bounds = omega_flat[mask]
     mag_ID_bounds = mag_ID_dB[mask]
@@ -347,9 +370,9 @@ def plot_resonance_bounds():
     gain_upper_dB = mag_ID_bounds + 20 * np.log10(gain_upper)
 
     plt.figure(figsize=FIG_SIZE_SINGLE)
-    plt.semilogx(omega_out.flatten(), mag_ID_dB, 'b-', linewidth=1.5, label='Nominal Plant')
-    plt.semilogx(omega_bounds, gain_upper_dB, 'r:', linewidth=2, label='Upper Bound')
-    plt.semilogx(omega_bounds, gain_lower_dB, 'g--', linewidth=1.5, label='Lower Bound')
+    plt.semilogx(omega_flat, mag_ID_dB, color='b', linewidth=1.5, label='Nominal Plant')
+    plt.semilogx(omega_bounds, gain_upper_dB, color='r', linewidth=1.5, linestyle=':', label='Upper Bound')
+    plt.semilogx(omega_bounds, gain_lower_dB, color='g', linewidth=1.5, linestyle='--', label='Lower Bound')
 
     plt.axvline(x=300, color='k', linestyle='--', linewidth=1, alpha=0.7)
     plt.axvline(x=1000, color='k', linestyle='--', linewidth=1, alpha=0.7)
@@ -360,7 +383,6 @@ def plot_resonance_bounds():
     plt.legend(loc='best')
     plt.grid(True, which='both', alpha=0.3)
     plt.xlim([100, omega_nyquist])
-    plt.ylim([-40, 40])
     plt.tight_layout()
     plt.show()
 
@@ -480,200 +502,59 @@ def plot_experiment_openloop():
         actual_steps = int(data['actual_steps'])
         print(f"載入數據: {actual_steps} 步")
         
-        # 顏色漸變 (藍→紅)
-        colors = plt.cm.coolwarm(np.linspace(0, 1, actual_steps))
-        
         plt.figure(figsize=FIG_SIZE_SINGLE)
-        
+
         for step in range(actual_steps):
             CC = CC_list[step]
             OLoop = ctrl.minreal(ctrl.ss2tf(CC * ID_Plant_v2p), tol=1e-3, verbose=False)
             mag, _, oma = ctrl.bode(OLoop, dB=True, omega_limits=[1e-2, 3e3], plot=False)
-            plt.plot(oma, 20 * np.log10(mag), color=colors[step], linewidth=0.8)
+            label = 'Controller' if step == 0 else None
+            plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2, label=label)
         
+        # 疊上中央控制器開路波德圖
+        overlay_input = input("是否疊上中央控制器開路波德圖? (y/n) [預設 n]: ").strip().lower()
+        if overlay_input == 'y':
+            try:
+                x_polegain = 0.4352
+                numFC = 14
+                num_low_freq_FC = 3
+                pdl = 300
+                class _CNC_parameter:
+                    Lq = 10
+                    w_sumError = 1e+3
+                    w_FCfreq = 4e+3
+                    w_Wgc = 1e+3
+                    w_earlyTrain = 5e-3
+                model_x = CNC.CNCModel('x', 0.001)
+                ID_Plant = model_x.ID_Plant()
+                testpath = CNC.PathModel(0.001).test_path()
+                cf = CNC.Costfunction(_CNC_parameter, x_polegain, ID_Plant, testpath, pdl, numFC, num_low_freq_FC)
+                CC_central = cf.LFTExpandedSS(np.zeros((_CNC_parameter.Lq, 1)))
+                OLoop_central = ctrl.minreal(ctrl.ss2tf(CC_central * ID_Plant_v2p), tol=1e-3, verbose=False)
+                mag_c, _, oma_c = ctrl.bode(OLoop_central, dB=True, omega_limits=[1e-2, 3e3], plot=False)
+                plt.plot(oma_c, 20 * np.log10(mag_c), color='k', linewidth=2, label='Central Controller')
+                plt.legend()
+                print("中央控制器已疊上")
+            except Exception as e:
+                print(f"中央控制器載入失敗: {e}")
+
         plt.grid()
         plt.xscale('log')
-        plt.xlim(1, 1e4)
+        plt.xlim(1e-2, 1e4)
         plt.ylim(-70, 70)
         plt.xlabel("Frequency (rad/s)")
         plt.ylabel("Magnitude (dB)")
         plt.title("Open Loop Bode Plot")
         plt.tight_layout()
+        output_path = os.path.join(os.path.dirname(data_path), 'openloop_bode.png')
+        plt.savefig(output_path, dpi=150)
+        print(f"圖片已儲存: {output_path}")
         plt.show()
     except FileNotFoundError:
         print(f"找不到檔案: {data_path}")
     except Exception as e:
         print(f"載入失敗: {e}")
 
-
-def generate_test_controller():
-    """產生測試控制器：中央控制器 + 二階共振系統，用於 Runtime.py
-    
-    ⚠️ 警告：此方法產生的控制器會使閉迴路極點靠近虛軸，
-    導致阻尼比過低(例如 +6dB 增益時 min_zeta≈0.22)，
-    可能在實際機台上引起共振。建議使用前先用 tool 9 檢查極點分布。
-    """
-    import argparse
-    
-    print("⚠️" + "="*56 + "⚠️")
-    print("警告：此方法產生的控制器可能導致閉迴路極點阻尼比過低！")
-    print("      例如 +6dB 增益時 min_zeta ≈ 0.22 (RISK)")
-    print("      建議使用前先用 tool 9 檢查極點分布")
-    print("⚠️" + "="*56 + "⚠️")
-    
-    np.set_printoptions(precision=15, suppress=True)
-    
-    # CNC 參數
-    Ts = 0.001
-    x_polegain = 0.4352
-    numFC = 14
-    num_low_freq_FC = 3
-    pdl = 300
-    
-    # 預設共振參數
-    print("=" * 60)
-    print("測試控制器產生器")
-    print("=" * 60)
-    print("\n共振參數設定:")
-    
-    omega_input = input("  共振頻率 omega (rad/s) [預設 800]: ").strip()
-    omega = int(omega_input) if omega_input else 800
-    
-    zeta_input = input("  阻尼比 zeta [預設 0.05]: ").strip()
-    zeta = float(zeta_input) if zeta_input else 0.05
-    
-    gain_input = input("  峰值增益 gain (分子zeta倍數) [預設 12]: ").strip()
-    gain = int(gain_input) if gain_input else 12
-    
-    # 創建 argparse namespace
-    class CNC_parameter:
-        Lq = 10
-        w_sumError = 1e+3
-        w_FCfreq = 4e+3
-        w_Wgc = 1e+3
-        w_earlyTrain = 5e-3
-    
-    # 創建實例
-    model_x = CNC.CNCModel('x', Ts)
-    path_model = CNC.PathModel(Ts)
-    ID_Plant = model_x.ID_Plant()
-    testpath = path_model.test_path()
-    
-    costfunction_x = CNC.Costfunction(CNC_parameter, x_polegain, ID_Plant, testpath, pdl, numFC, num_low_freq_FC)
-    
-    # ===== 1. 取得中央控制器 (Q=0) =====
-    CC_central = costfunction_x.LFTExpandedSS(np.zeros((CNC_parameter.Lq, 1)))
-    print("\n中央控制器 CC_central 已產生")
-    
-    # ===== 2. 設定共振參數並創建二階系統 =====
-    # 二階共振系統 (連續時間)
-    # H(s) = (s^2 + gain*zeta*omega*s + omega^2) / (s^2 + 2*zeta*omega*s + omega^2)
-    resonance_tf_continuous = ctrl.TransferFunction(
-        [1, gain * zeta * omega, omega**2], 
-        [1, 2 * zeta * omega, omega**2]
-    )
-    # 離散化
-    resonance_tf = ctrl.sample_system(resonance_tf_continuous, Ts)
-    
-    print(f"\n共振參數: omega={omega} rad/s, zeta={zeta}, gain={gain}")
-    print(f"共振二階系統 (離散):")
-    print(f"  分子: {resonance_tf.num[0][0]}")
-    print(f"  分母: {resonance_tf.den[0][0]}")
-    
-    # ===== 3. 串接控制器 =====
-    CC_with_resonance = CC_central * resonance_tf
-    print("\n中央控制器已串接共振系統")
-    
-    # ===== 4. 轉換為傳遞函數並輸出係數 =====
-    CC_tf = ctrl.ss2tf(CC_with_resonance)
-    num = np.array(CC_tf.num[0][0])
-    den = np.array(CC_tf.den[0][0])
-    
-    print("\n" + "=" * 60)
-    print("串接後控制器的傳遞函數係數:")
-    print(f"分子 (num, {len(num)}個): {num}")
-    print(f"分母 (den, {len(den)}個): {den}")
-    
-    # 對齊長度 (如果需要)
-    max_len = max(len(num), len(den))
-    num_padded = np.pad(num, (0, max_len - len(num)))
-    den_padded = np.pad(den, (0, max_len - len(den)))
-    
-    # 合併成 Runtime.py 格式
-    X_resonance_new = np.concatenate([num_padded, den_padded])
-    
-    print("\n" + "=" * 60)
-    print("複製以下內容到 Runtime.py:")
-    print("=" * 60)
-    print(f"#X軸本身機台共振測試控制器(新) omega={omega}, zeta={zeta}, gain={gain}")
-    print(f"X_resonance = {X_resonance_new.tolist()}")
-    print(f"CC_X_resonance = ctrl.tf2ss(ctrl.TransferFunction(X_resonance[:{max_len}], X_resonance[{max_len}:], Ts))")
-    print("=" * 60)
-    
-    # ===== 5. 詢問是否繪圖 =====
-    plot_choice = input("\n是否繪製驗證圖? (y/n) [預設 y]: ").strip().lower()
-    if plot_choice != 'n':
-        # 1. 中央控制器
-        plt.figure(figsize=FIG_SIZE_SINGLE)
-        mag_c, _, oma_c = ctrl.bode(ctrl.ss2tf(CC_central), dB=True, omega_limits=[1e-2, 3e3], plot=False)
-        plt.plot(oma_c, 20*np.log10(mag_c), color='b', linewidth=2)
-        plt.grid()
-        plt.xscale('log')
-        plt.xlim(1, 1e4)
-        plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)")
-        plt.ylabel("Magnitude (dB)")
-        plt.title("Central Controller")
-        plt.tight_layout()
-        plt.show()
-        
-        # 2. 中央控制器 + Nominal_Plant (開迴路)
-        plt.figure(figsize=FIG_SIZE_SINGLE)
-        OLoop_central = ctrl.minreal(ctrl.ss2tf(CC_central * ID_Plant['v2p']), tol=1e-3, verbose=False)
-        mag_oc, _, oma_oc = ctrl.bode(OLoop_central, dB=True, omega_limits=[1e-2, 3e3], plot=False)
-        plt.plot(oma_oc, 20*np.log10(mag_oc), color='b', linewidth=2)
-        plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
-        plt.grid()
-        plt.xscale('log')
-        plt.xlim(1, 1e4)
-        plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)")
-        plt.ylabel("Magnitude (dB)")
-        plt.title("Central Controller + Nominal_Plant\n(Open Loop)")
-        plt.tight_layout()
-        plt.show()
-        
-        # 3. 新測試控制器 (中央控制器 + 共振)
-        plt.figure(figsize=FIG_SIZE_SINGLE)
-        mag_r, _, oma_r = ctrl.bode(CC_tf, dB=True, omega_limits=[1e-2, 3e3], plot=False)
-        plt.plot(oma_r, 20*np.log10(mag_r), color='r', linewidth=2)
-        plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7)
-        plt.grid()
-        plt.xscale('log')
-        plt.xlim(1, 1e4)
-        plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)")
-        plt.ylabel("Magnitude (dB)")
-        plt.title("Test Controller + Nominal_Plant\n(Open Loop)")
-        plt.tight_layout()
-        plt.show()
-        
-        # 4. 新測試控制器 + Nominal_Plant (開迴路)
-        plt.figure(figsize=FIG_SIZE_SINGLE)
-        OLoop_resonance = ctrl.minreal(ctrl.ss2tf(CC_with_resonance * ID_Plant['v2p']), tol=1e-3, verbose=False)
-        mag_or, _, oma_or = ctrl.bode(OLoop_resonance, dB=True, omega_limits=[1e-2, 3e3], plot=False)
-        plt.plot(oma_or, 20*np.log10(mag_or), color='r', linewidth=2)
-        plt.axhline(y=0, color='k', linestyle='--', alpha=0.5)
-        plt.axvline(x=omega, color='g', linestyle='--', alpha=0.7)
-        plt.grid()
-        plt.xscale('log')
-        plt.xlim(1, 1e4)
-        plt.ylim(-70, 70)
-        plt.xlabel("Frequency (rad/s)")
-        plt.ylabel("Magnitude (dB)")
-        plt.title("Test Controller + Nominal_Plant\n(Open Loop)")
-        plt.tight_layout()
-        plt.show()
 
 
 def plot_experiment_OLoop_poles():
@@ -716,30 +597,45 @@ def plot_experiment_OLoop_poles():
         poles_c = np.log(poles_d) / Ts
         
         print(f"Total poles: {len(poles_c)}")
-        
+
+        # 計算阻尼比（只對複數極點）
+        complex_poles = poles_c[np.abs(poles_c.imag) > 1]
+        if len(complex_poles) > 0:
+            zeta = -complex_poles.real / np.abs(complex_poles)
+            min_zeta = np.min(zeta)
+            min_zeta_pole = complex_poles[np.argmin(zeta)]
+            print(f"最小阻尼比 ζ = {min_zeta:.4f}  (極點: {min_zeta_pole.real:.0f} ± {abs(min_zeta_pole.imag):.0f}j rad/s)")
+
+        # 選出離虛軸最近的前 5 個複數極點（取上半平面，避免共軛重複）
+        upper_complex = complex_poles[complex_poles.imag > 0]
+        if len(upper_complex) > 0:
+            sorted_by_real = upper_complex[np.argsort(np.abs(upper_complex.real))]
+            label_poles = sorted_by_real[:5]
+        else:
+            label_poles = np.array([])
+
         # 畫極點圖
         fig, ax = plt.subplots(figsize=FIG_SIZE_SINGLE)
-        
+
         # 畫所有極點
         ax.scatter(poles_c.real, poles_c.imag, s=100, c='blue', marker='x', linewidths=2)
-        
-        # 標出所有極點數值
-        for p in poles_c:
-            if abs(p.imag) > 1:
-                label = f'({p.real:.0f}, {p.imag:.0f}j)'
-            else:
-                label = f'({p.real:.0f}, 0)'
-            ax.annotate(label, (p.real, p.imag), textcoords='offset points', xytext=(5, 5), fontsize=7)
-        
+
+        # 只標記離虛軸最近的複數極點（上下各標）
+        for p in label_poles:
+            for sign, pole in [(1, p), (-1, p.conjugate())]:
+                label = f'({pole.real:.0f}, {pole.imag:.0f}j)'
+                ax.annotate(label, (pole.real, pole.imag),
+                            textcoords='offset points', xytext=(5, 5 * sign), fontsize=12)
+
         # 畫軸線
         ax.axvline(x=0, color='k', linestyle='-', linewidth=1)
         ax.axhline(y=0, color='k', linestyle='-', linewidth=1)
-        
+
         ax.set_xlabel('Real (1/s)')
         ax.set_ylabel('Imaginary (rad/s)')
         ax.set_title('Closed-Loop Poles (Test Controller)')
         ax.grid(True, alpha=0.3)
-        
+
         # 自動調整範圍包含所有極點
         margin = 0.1
         real_min, real_max = poles_c.real.min(), poles_c.real.max()
@@ -748,14 +644,156 @@ def plot_experiment_OLoop_poles():
         imag_range = max(imag_max - imag_min, 100)
         ax.set_xlim(real_min - margin * real_range - 500, real_max + margin * real_range + 500)
         ax.set_ylim(imag_min - margin * imag_range - 500, imag_max + margin * imag_range + 500)
+
+        # 畫最小阻尼比線（set_xlim 之後才能拿到正確邊界）
+        if len(complex_poles) > 0:
+            pr, pi = min_zeta_pole.real, abs(min_zeta_pole.imag)
+            slope = pi / pr  # pr < 0，slope < 0，往左上延伸
+            x_left = ax.get_xlim()[0]
+            y_at_left = slope * x_left
+            ax.plot([0, x_left], [0, y_at_left], color='orange', linewidth=1.5)
+            ax.plot([0, x_left], [0, -y_at_left], color='orange', linewidth=1.5)
+            ax.text(0.02, 0.97, f'min ζ = {min_zeta:.4f}',
+                    transform=ax.transAxes, fontsize=12, color='orange', va='top',
+                    bbox=dict(boxstyle='round', facecolor='white', edgecolor='orange', alpha=0.8))
         
         plt.tight_layout()
+        output_path = os.path.join(os.path.dirname(data_path), 'closed_loop_poles.png')
+        plt.savefig(output_path, dpi=150)
+        print(f"圖片已儲存: {output_path}")
         plt.show()
-        
+
     except FileNotFoundError:
         print(f"找不到檔案: {data_path}")
     except Exception as e:
         print(f"載入失敗: {e}")
+
+
+def plot_resonance_spectrum():
+    """載入實驗數據繪製誤差全段 FFT 頻譜分析"""
+    import scipy.fft
+    import scipy.signal
+
+    root = tk.Tk()
+    root.withdraw()
+    initial_dir = os.path.join('..', 'ExperimentData')
+    if not os.path.exists(initial_dir):
+        initial_dir = '..'
+    file_path = filedialog.askopenfilename(
+        title='選擇實驗數據檔案 (runtime_data.npz)',
+        initialdir=initial_dir,
+        filetypes=[('NumPy檔案', '*.npz'), ('所有檔案', '*.*')]
+    )
+    root.destroy()
+    if not file_path:
+        print('未選擇檔案')
+        return
+
+    data = np.load(file_path, allow_pickle=True)
+    error_list = data['error_list']
+    Ts = float(data['Ts'])
+    print(f'共 {len(error_list)} 步，每步 {len(error_list[0])} 點，Ts={Ts} 秒')
+
+    # 時間段
+    t_start_input = input("起始時間 (秒) [Enter=從頭]: ").strip()
+    t_end_input = input("結束時間 (秒) [Enter=到尾]: ").strip()
+    TIME_START = float(t_start_input) if t_start_input else None
+    TIME_END = float(t_end_input) if t_end_input else None
+
+    # 高通濾波
+    hp_input = input("高通濾波頻率 Hz [Enter=不濾波]: ").strip()
+    HIGHPASS_FREQ_HZ = float(hp_input) if hp_input else None
+
+    # 異常值
+    outlier_input = input("異常值門檻 (標準差倍數) [Enter=不移除]: ").strip()
+    OUTLIER_THRESHOLD = float(outlier_input) if outlier_input else None
+
+    # 合併誤差
+    all_errors = np.concatenate(error_list)
+    start_idx = int(TIME_START / Ts) if TIME_START else 0
+    end_idx = int(TIME_END / Ts) if TIME_END else len(all_errors)
+    start_idx = max(0, start_idx)
+    end_idx = min(len(all_errors), end_idx)
+    all_errors = all_errors[start_idx:end_idx]
+    time_offset = start_idx * Ts
+    all_errors = all_errors - np.mean(all_errors)
+
+    # 異常值移除
+    if OUTLIER_THRESHOLD:
+        std = np.std(all_errors)
+        outlier_mask = np.abs(all_errors) > OUTLIER_THRESHOLD * std
+        if np.sum(outlier_mask) > 0:
+            indices = np.arange(len(all_errors))
+            valid_mask = ~outlier_mask
+            all_errors[outlier_mask] = np.interp(indices[outlier_mask], indices[valid_mask], all_errors[valid_mask])
+            print(f'移除異常值: {np.sum(outlier_mask)} 點 (>{OUTLIER_THRESHOLD}σ)')
+
+    # 高通濾波
+    if HIGHPASS_FREQ_HZ:
+        nyquist = 0.5 / Ts
+        b, a = scipy.signal.butter(4, HIGHPASS_FREQ_HZ / nyquist, btype='high')
+        all_errors = scipy.signal.filtfilt(b, a, all_errors)
+        print(f'高通濾波: {HIGHPASS_FREQ_HZ} Hz')
+
+    # FFT
+    N_fft = 10000
+    window = np.hanning(len(all_errors))
+    yf = scipy.fft.fft(window * all_errors, n=N_fft)
+    xf = scipy.fft.fftfreq(N_fft, Ts)
+    magnitude = np.abs(yf[:N_fft//2])
+    omega = (2 * np.pi * xf)[:N_fft//2]
+
+    freq_limit_rad = 500 * 2 * np.pi
+    mask = omega < freq_limit_rad
+    omega_plot = omega[mask]
+    magnitude_plot = magnitude[mask]
+
+    peaks, _ = scipy.signal.find_peaks(magnitude_plot, height=np.max(magnitude_plot) * 0.1, distance=10)
+    sorted_idx = np.argsort(magnitude_plot[peaks])[::-1][:1]
+    top_peaks = peaks[sorted_idx]
+    top_freqs = omega_plot[top_peaks]
+    top_mags = magnitude_plot[top_peaks]
+
+    # 畫圖
+    plt.figure(figsize=FIG_SIZE_WIDE)
+    plt.subplot(2, 1, 1)
+    time_axis = np.arange(len(all_errors)) * Ts + time_offset
+    plt.plot(time_axis, all_errors, color='b')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Error')
+    title_parts = ['Full Error Time Domain']
+    if TIME_START or TIME_END:
+        title_parts.append(f'({time_offset:.1f}~{time_offset + len(all_errors)*Ts:.1f}s)')
+    if HIGHPASS_FREQ_HZ:
+        title_parts.append(f'HP {HIGHPASS_FREQ_HZ} Hz')
+    plt.title(' '.join(title_parts))
+    plt.grid(True)
+
+    plt.subplot(2, 1, 2)
+    plt.plot(omega_plot, magnitude_plot, color='b')
+    plt.plot(top_freqs, top_mags, 'r*', markersize=12)
+    plt.xlabel('Frequency (rad/s)')
+    plt.ylabel('Magnitude')
+    fft_title_parts = ['Full Error FFT Spectrum']
+    if TIME_START or TIME_END:
+        fft_title_parts.append(f'({time_offset:.1f}~{time_offset + len(all_errors)*Ts:.1f}s)')
+    if HIGHPASS_FREQ_HZ:
+        fft_title_parts.append(f'HP {HIGHPASS_FREQ_HZ} Hz')
+    plt.title(' '.join(fft_title_parts))
+    plt.xlim([0, freq_limit_rad])
+    plt.ylim([0, np.max(magnitude_plot) * 1.2])
+    for f, m in zip(top_freqs, top_mags):
+        plt.text(f, m * 1.08, f'{f:.1f} rad/s ({f/(2*np.pi):.1f} Hz)',
+                 ha='center', color='red', fontweight='bold')
+    plt.grid(True)
+    plt.tight_layout()
+
+    output_path = os.path.join(os.path.dirname(file_path), 'error_full_fft.png')
+    plt.savefig(output_path, dpi=150)
+    print(f'圖片已儲存: {output_path}')
+    for f, m in zip(top_freqs, top_mags):
+        print(f'最高峰值: {f:.2f} rad/s ({f/(2*np.pi):.2f} Hz) - Magnitude: {m:.2f}')
+    plt.show()
 
 
 # ============================================================
@@ -763,13 +801,13 @@ def plot_experiment_OLoop_poles():
 # ============================================================
 
 MENU = {
-    '1': ('受控體隨機抽樣波德圖 (BUE/PRE)', plot_plant_ensemble),
+    '1': ('受控體波德圖繪製 (ID / Test / BUE / PRE)', plot_plant_ensemble),
     '2': ('路徑資料繪圖與匯出', plot_or_export_path),
     '3': ('隨機共振峰值上下界繪圖', plot_resonance_bounds),
     '4': ('動態FFT遮罩測試(產生動畫)', dynamic_fft_mask_animation),
     '5': ('載入實驗數據繪製開迴路波德圖', plot_experiment_openloop),
-    '6': ('產生測試控制器 ⚠️低阻尼可能引起共振', generate_test_controller),
-    '7': ('載入實驗數據繪製閉迴路極點圖', plot_experiment_OLoop_poles),
+    '6': ('載入實驗數據繪製閉迴路極點圖', plot_experiment_OLoop_poles),
+    '7': ('載入實驗數據機台共振頻譜分析', plot_resonance_spectrum),
 }
 
 
