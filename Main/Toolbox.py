@@ -6,27 +6,6 @@ CNC 工具箱 - 集合各種繪圖與分析工具
 # ============================================================
 # 以下為不完整程式片段，供複製使用
 # ============================================================
-'''畫隨機共振峰值(加上控制器) - 需要 CC, Plant, model_x 等變數，放在Training的片段中
-import control as ctrl
-plt.figure(figsize=(12, 6))
-OLoop = ctrl.minreal(ctrl.ss2tf(CC * Plant['v2p']), tol=1e-3, verbose=False)
-mag, _, oma = ctrl.bode(OLoop, dB=True, omega_limits=[1e-2, 3e3], plot=False)
-plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2)
-for i in range(100):
-    Plant=model_x.BUE_Plant()
-    OLoop = ctrl.minreal(ctrl.ss2tf(CC * Plant['v2p']), tol=1e-3, verbose=False)
-    mag, _, oma = ctrl.bode(OLoop, dB=True, omega_limits=[1e-2, 3e3], plot=False)
-    plt.plot(oma, 20 * np.log10(mag), color='r', linewidth=0.3)
-plt.grid()
-plt.xscale('log')
-plt.xlim(1, 1e4)
-plt.ylim(-70, 70)
-plt.xlabel("Frequency (rad/s)", size=14)
-plt.ylabel("Magnitude (dB)", size=14)
-plt.title("Perturbed Resonant Ensemble", size=18)
-plt.show()
-'''
-
 '''轉出CC - 需要 CC 變數，放在 Training 的片段中
 CC_tf = ctrl.ss2tf(CC)
 den = np.array(CC_tf.den[0][0], dtype=np.float32)
@@ -83,6 +62,7 @@ matplotlib.rcParams.update({
     'xtick.labelsize': 18,    # 刻度數字
     'ytick.labelsize': 18,    # 刻度數字
     'legend.fontsize': 18,    # 圖例
+    'font.size': 18,          # 標註文字（plt.text 等）
 })
 
 # ============================================================
@@ -508,7 +488,7 @@ def plot_experiment_openloop():
             CC = CC_list[step]
             OLoop = ctrl.minreal(ctrl.ss2tf(CC * ID_Plant_v2p), tol=1e-3, verbose=False)
             mag, _, oma = ctrl.bode(OLoop, dB=True, omega_limits=[1e-2, 3e3], plot=False)
-            label = 'Controller' if step == 0 else None
+            label = 'Test Controller' if step == 0 else None
             plt.plot(oma, 20 * np.log10(mag), color='b', linewidth=2, label=label)
         
         # 疊上中央控制器開路波德圖
@@ -532,7 +512,7 @@ def plot_experiment_openloop():
                 CC_central = cf.LFTExpandedSS(np.zeros((_CNC_parameter.Lq, 1)))
                 OLoop_central = ctrl.minreal(ctrl.ss2tf(CC_central * ID_Plant_v2p), tol=1e-3, verbose=False)
                 mag_c, _, oma_c = ctrl.bode(OLoop_central, dB=True, omega_limits=[1e-2, 3e3], plot=False)
-                plt.plot(oma_c, 20 * np.log10(mag_c), color='k', linewidth=2, label='Central Controller')
+                plt.plot(oma_c, 20 * np.log10(mag_c), color='k', linewidth=2, linestyle=':', label='Central Controller')
                 plt.legend()
                 print("中央控制器已疊上")
             except Exception as e:
@@ -761,7 +741,7 @@ def plot_resonance_spectrum():
     plt.plot(time_axis, all_errors, color='b')
     plt.xlabel('Time (s)')
     plt.ylabel('Error')
-    title_parts = ['Full Error Time Domain']
+    title_parts = ['Error Time Domain']
     if TIME_START or TIME_END:
         title_parts.append(f'({time_offset:.1f}~{time_offset + len(all_errors)*Ts:.1f}s)')
     if HIGHPASS_FREQ_HZ:
@@ -774,12 +754,7 @@ def plot_resonance_spectrum():
     plt.plot(top_freqs, top_mags, 'r*', markersize=12)
     plt.xlabel('Frequency (rad/s)')
     plt.ylabel('Magnitude')
-    fft_title_parts = ['Full Error FFT Spectrum']
-    if TIME_START or TIME_END:
-        fft_title_parts.append(f'({time_offset:.1f}~{time_offset + len(all_errors)*Ts:.1f}s)')
-    if HIGHPASS_FREQ_HZ:
-        fft_title_parts.append(f'HP {HIGHPASS_FREQ_HZ} Hz')
-    plt.title(' '.join(fft_title_parts))
+    plt.title('Error FFT')
     plt.xlim([0, freq_limit_rad])
     plt.ylim([0, np.max(magnitude_plot) * 1.2])
     for f, m in zip(top_freqs, top_mags):
