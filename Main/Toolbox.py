@@ -50,20 +50,13 @@ import CNC
 # 繪圖參數(統一標準，與 Plot_Exp_Data.py 一致)
 # ============================================================
 
-# 圖片尺寸 (寬, 高) - 需被16整除以相容影片編碼
-FIG_SIZE_SINGLE = (7.68, 5.76)    # 768x576
-FIG_SIZE_WIDE = (11.52, 5.76)     # 1152x576
-FIG_SIZE_MULTI = (10.24, 10.24)   # 1024x1024
+# 圖片尺寸 (寬, 高) - 單一定義在 CNC.py，此處引用以保持全專案一致
+FIG_SIZE_SINGLE = CNC.FIG_SIZE_SINGLE   # 768x576
+FIG_SIZE_WIDE = CNC.FIG_SIZE_WIDE       # 1152x576
+FIG_SIZE_MULTI = CNC.FIG_SIZE_MULTI     # 1024x1024
 
-# 字體大小設定
-matplotlib.rcParams.update({
-    'axes.titlesize': 24,     # 圖表標題
-    'axes.labelsize': 20,     # 座標軸標籤
-    'xtick.labelsize': 18,    # 刻度數字
-    'ytick.labelsize': 18,    # 刻度數字
-    'legend.fontsize': 18,    # 圖例
-    'font.size': 18,          # 標註文字（plt.text 等）
-})
+# 字體設定（單一定義在 CNC.py，此處套用以保持全專案一致）
+CNC.apply_plot_style()
 
 # ============================================================
 # 功能函數

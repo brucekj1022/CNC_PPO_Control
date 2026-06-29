@@ -11,6 +11,34 @@ import scipy
 from scipy.signal import tf2zpk
 
 
+# ============================================================
+# 繪圖尺寸標準（全專案共用，Plot_Exp_Data.py / Toolbox.py 由此引用）
+# 像素需被 16 整除以相容影片編碼（dpi=100）
+# ============================================================
+FIG_SIZE_SINGLE = (7.68, 5.76)    # 768x576  單張標準圖
+FIG_SIZE_WIDE = (11.52, 5.76)     # 1152x576 寬版圖
+FIG_SIZE_MULTI = (10.24, 10.24)   # 1024x1024 多合一/方形圖
+
+# 字體大小（圖片越小，字體相對越大）
+FONT_TITLE = 24    # 圖表標題
+FONT_LABEL = 20    # 座標軸標籤
+FONT_TICK = 18     # 刻度數字
+FONT_LEGEND = 18   # 圖例
+FONT_TEXT = 18     # 標註文字（plt.text 等）
+
+
+def apply_plot_style():
+    """套用全專案統一的 matplotlib 字體樣式（Plot_Exp_Data.py / Toolbox.py 共用）。"""
+    plt.rcParams.update({
+        'axes.titlesize': FONT_TITLE,
+        'axes.labelsize': FONT_LABEL,
+        'xtick.labelsize': FONT_TICK,
+        'ytick.labelsize': FONT_TICK,
+        'legend.fontsize': FONT_LEGEND,
+        'font.size': FONT_TEXT,
+    })
+
+
 def SimulateResponse(path, CC, plant, X0=0, Ts=0.001):
     """模擬閉迴路系統響應，回傳 (下一時間步狀態, 誤差um, 輸出響應)。"""
     # 將 plant 轉換為狀態空間形式
@@ -877,7 +905,7 @@ class PlotExporter:
 
     def plot_frame(self, CC, plant, FC, manual_add_FC):
         """繪製單張開迴路 Bode 圖 + FC 限制點，並儲存圖片。"""
-        plt.figure(figsize=(12, 6.08))
+        plt.figure(figsize=FIG_SIZE_SINGLE)
         OLoop = ctrl.minreal(ctrl.ss2tf(CC * plant), tol=1e-3, verbose=False)
         mag, _, oma = ctrl.bode(OLoop, dB=True, omega_limits=[1e-2, 3e3], plot=False)
         
@@ -920,7 +948,7 @@ class PlotExporter:
         rms = np.sqrt(np.mean(combined_data ** 2))
         print(f"RMS Error: {rms:.4f} um")
         
-        plt.figure(figsize=(10, 4))
+        plt.figure(figsize=FIG_SIZE_WIDE)
         if not np.any(np.abs(combined_data) > 30):
             plt.ylim(-30, 30)
         

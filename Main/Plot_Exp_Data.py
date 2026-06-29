@@ -72,25 +72,13 @@ BATCH_EXPERIMENTS = [
 # 繪圖參數
 # ============================================================
 
-# 圖片尺寸 (寬, 高) - 需被16整除以相容影片編碼
-FIG_SIZE_SINGLE = (7.68, 5.76)    # 768x576
-FIG_SIZE_WIDE = (11.52, 5.76)     # 1152x576
-FIG_SIZE_MULTI = (10.24, 10.24)   # 1024x1024
+# 圖片尺寸 (寬, 高) - 單一定義在 CNC.py，此處引用以保持全專案一致
+FIG_SIZE_SINGLE = CNC.FIG_SIZE_SINGLE   # 768x576
+FIG_SIZE_WIDE = CNC.FIG_SIZE_WIDE       # 1152x576
+FIG_SIZE_MULTI = CNC.FIG_SIZE_MULTI     # 1024x1024
 
-# 字體大小（圖片越小，字體相對越大）
-FONT_TITLE = 24    # 圖表標題
-FONT_LABEL = 20    # 座標軸標籤
-FONT_TICK = 18     # 刻度數字
-FONT_LEGEND = 18   # 圖例
-
-# 套用字體設定
-matplotlib.rcParams.update({
-    'axes.titlesize': FONT_TITLE,
-    'axes.labelsize': FONT_LABEL,
-    'xtick.labelsize': FONT_TICK,
-    'ytick.labelsize': FONT_TICK,
-    'legend.fontsize': FONT_LEGEND,
-})
+# 字體設定（單一定義在 CNC.py，此處套用以保持全專案一致）
+CNC.apply_plot_style()
 
 
 # ============================================================
@@ -294,6 +282,7 @@ class PlotExporter:
         plt.ylabel("Magnitude (dB)")
         plt.title(f'Step {self.step + 1}')
 
+        plt.tight_layout()  # 自動收進軸標籤，避免文字被切掉（不改變圖框尺寸）
         filename = f'{self.folder}/frame_{self.step:03d}.png'
         plt.savefig(filename)
         plt.close('all')
@@ -323,8 +312,8 @@ class PlotExporter:
             combined_data = np.concatenate([combined_data, padding])
         
         time = np.arange(len(combined_data)) * Ts
-        
-        plt.figure(figsize=FIG_SIZE_SINGLE)
+
+        plt.figure(figsize=FIG_SIZE_WIDE)
         plt.plot(time, combined_data, linewidth=1.5)
         
         if not np.any(np.abs(combined_data) > 30):
@@ -352,7 +341,8 @@ class PlotExporter:
         plt.grid()
         if events:
             plt.legend(loc='upper right')
-        
+
+        plt.tight_layout()  # 自動收進軸標籤，避免 y 軸文字被切掉（不改變圖框尺寸）
         print("RMS Error: ", np.sqrt(np.mean(combined_data**2)))
         plt.show()
 
@@ -802,7 +792,8 @@ def plot_reference_path(data, experiment_folder):
     plt.xlabel('Time (s)')
     plt.ylabel('Magnitude(mm)')
     plt.grid(True)
-    
+
+    plt.tight_layout()  # 自動收進軸標籤，避免文字被切掉（不改變圖框尺寸）
     save_path = os.path.join(experiment_folder, 'reference_path.png')
     plt.savefig(save_path)
     plt.close()
@@ -1091,7 +1082,8 @@ def plot_error_statistics(aligned_errors, mean_error, std_error,
     plt.title('Error Statistics')
     plt.grid()
     plt.legend()
-    
+
+    plt.tight_layout()  # 自動收進軸標籤，避免文字被切掉（不改變圖框尺寸）
     if save_path:
         plt.savefig(save_path, dpi=300)
         print(f"✓ 誤差統計圖已保存: {save_path}")
