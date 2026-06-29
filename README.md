@@ -304,4 +304,4 @@ python Plot_Exp_Data.py  # 視覺化實驗資料
 - `Training.py`、`Runtime.py`、`Simulation.py` 各自有獨立的 `CNC_parameter`（reward 權重 `w_sumError` 等）與 `fft_limit_freq`，這些刻意不同，改一個不要連動改其他。
 - `Model/` 與 `ExperimentData/` 已 gitignore（權重太大另存雲端，實驗資料量大）。
 - 受控體模型參數源自 `Matlab/`。修改 plant 行為通常要回到 MATLAB 重新產生資料。
-- **繪圖標準**（`Toolbox.py` / `Plot_Exp_Data.py` 一致）：圖框尺寸 `FIG_SIZE_SINGLE=(7.68, 5.76)`、`FIG_SIZE_WIDE=(11.52, 5.76)`、`FIG_SIZE_MULTI=(10.24, 10.24)`（需被 16 整除以相容影片編碼）；字體經 `matplotlib.rcParams` 統一（標題 24、軸標籤 20、刻度 18、圖例 18）。
+- **繪圖標準**：圖框尺寸（`FIG_SIZE_*`）與字體（`apply_plot_style()`）統一定義在 `CNC.py`，`Plot_Exp_Data.py` / `Toolbox.py` 引用，改一處即全專案同步。尺寸像素需被 16 整除以相容影片編碼。
