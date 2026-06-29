@@ -45,7 +45,7 @@ BATCH_EXPERIMENTS = [
     {'path': '實驗2', 'mode': 'single', 'show_events': True, 'resonance_time': 3},
     {'path': '實驗3', 'mode': 'single', 'show_events': False, 'resonance_time': None},
     {'path': '實驗4', 'mode': 'single', 'show_events': False, 'resonance_time': None},
-    {'path': '實驗5', 'mode': 'single', 'show_events': False, 'resonance_time': None},
+    #{'path': '實驗5', 'mode': 'single', 'show_events': False, 'resonance_time': None},
 
     # === 雙模型模擬 ===
     {'path': '雙模型模擬/BUE_0~1Hz_有共振', 'mode': 'single', 'show_events': True, 'resonance_time': 0},
