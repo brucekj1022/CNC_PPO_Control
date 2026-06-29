@@ -52,7 +52,7 @@ import CNC
 
 # 圖片尺寸 (寬, 高) - 單一定義在 CNC.py，此處引用以保持全專案一致
 FIG_SIZE_SINGLE = CNC.FIG_SIZE_SINGLE   # 768x576
-FIG_SIZE_WIDE = CNC.FIG_SIZE_WIDE       # 1152x576
+FIG_SIZE_WIDE = CNC.FIG_SIZE_WIDE       # 1200x608
 FIG_SIZE_MULTI = CNC.FIG_SIZE_MULTI     # 1024x1024
 
 # 字體設定（單一定義在 CNC.py，此處套用以保持全專案一致）
