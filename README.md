@@ -14,6 +14,7 @@ CNC 進給軸控制器的線上自動設計系統。核心是用 **PPO 強化學
   - [相依套件](#相依套件)
 - [Main/ 各檔案說明](#main-各檔案說明)
 - [Matlab/ 各檔案說明](#matlab-各檔案說明)
+- [LabVIEW/ 各檔案說明](#labview-各檔案說明)
 - [資料檔案格式](#資料檔案格式)
 - [約定與注意事項](#約定與注意事項)
 
@@ -61,6 +62,20 @@ State → Actor(PPO) → FC → QCQP(Costfunction) → 控制器 CC → 模擬/�
 │   ├── 2025.9.17 velocityIO_data/ # 主驗證資料（9 組 Input/Output 速度）
 │   ├── OE Model/         # OE 多項式模型（*.mat）與評估結果（*.png/csv）
 │   └── Check model/      # 模型驗證（CheckModel.m / Cloop_sim.m / CLoopsim.slx）
+│
+├── LabVIEW/              # 上機端：cRIO 即時控制器（EtherCAT 連士林伺服）
+│   ├── KJ_project.lvproj # LabVIEW 專案檔（主機 + cRIO 兩個 target）
+│   ├── KJ_project.aliases# 連線 IP 別名（cRIO / 主機）
+│   ├── Runtime.vi        # 上機主程式：TCP client 連 Main/Runtime.py
+│   ├── Simulation.vi     # LabVIEW 端離線閉迴路模擬
+│   ├── ID_X_velocityMode.vi # X 軸速度模式系統鑑別
+│   ├── ID_Z_velocityMode.vi # Z 軸速度模式系統鑑別
+│   ├── Save to csv_velocityMode.vi # 速度模式量測 I/O 存成 CSV
+│   ├── pc_server.py      # 通訊協議模組副本（同 Main/pc_server.py）
+│   ├── run_server.bat    # 啟動 pc_server.py 的批次檔
+│   ├── 6Hz.txt / 8Hz.txt # 參考訊號資料（1 kHz × 30 秒）
+│   ├── SDP-E_rev109(改).xml # EtherCAT 裝置描述檔（士林伺服 ESI）
+│   └── test/TCP_test.vi  # TCP 連線測試
 │
 ├── Model/                # 訓練權重 .pth（已 gitignore，太大另存雲端）
 └── ExperimentData/       # 實驗資料（已 gitignore，量大）
@@ -232,6 +247,33 @@ python Plot_Exp_Data.py  # 視覺化實驗資料
 - **`2025.9.17 velocityIO_data/`** — 主驗證資料（`Input/Output-velocity_1~9.csv`，1 kHz）。核心資料集，供 `Create_Delta.m` 與 `Plot_OE_Model.m`。
 - **`OE Model/`** — OE 多項式模型（`OE221.mat` 等）與 `Plot_OE_Model.m` 的評估產物。當前最佳模型為 OE222。
 - **`Check model/CLoopsim.slx`** — Simulink 離散閉迴路模擬框架，由 `Cloop_sim.m` 調用。
+
+---
+
+## LabVIEW/ 各檔案說明
+
+上機端（硬體側）程式。cRIO 即時控制器經 **EtherCAT** 驅動士林電機伺服馬達；`Runtime.vi` 當 **TCP client** 連到 Python 的 `Main/Runtime.py`（server），每步把追跡誤差傳給 Python、收回新合成的控制器係數套用到馬達。
+
+> `.vi` 為 LabVIEW 二進位格式，需用 LabVIEW（專案以 25.0 版建立）開啟，無法用文字編輯器檢視。
+
+### 程式 (VI)
+
+- **`Runtime.vi`** — 上機主程式。當 TCP client 連 `Main/Runtime.py`，逐區段上傳誤差 `ek`、接收控制器係數，於 cRIO 上即時運行。
+  **執行順序**：須**先**執行 Python 端 `Main/Runtime.py` 開啟 TCP server 監聽，**再**啟動本 VI 連線開始運行。
+  > ⚠️ 目前 `Runtime.py` 每步的連線等待只設 **10 秒**，超時就自動存檔結束；務必在 Python 端開始監聽後盡快啟動 LabVIEW Runtime。
+- **`Simulation.vi`** — LabVIEW 端的離線閉迴路模擬，不需連線真實機台。
+- **`ID_X_velocityMode.vi` / `ID_Z_velocityMode.vi`** — X / Z 軸速度模式系統鑑別：對馬達送激勵訊號並記錄速度輸出，作為 MATLAB 系統辨識的輸入資料來源。
+- **`Save to csv_velocityMode.vi`** — 把速度模式量測到的 Input/Output 存成 CSV（即 `Matlab/2025.9.17 velocityIO_data/` 那類資料）。
+- **`test/TCP_test.vi`** — TCP 連線測試，搭配 `pc_server.py` 驗證主機與 cRIO 的通訊與往返時間。
+
+### 設定與資料
+
+- **`KJ_project.lvproj`** — LabVIEW 專案檔。含兩個 target：**My Computer**（主機端，放各 VI）與 **cRIO-Demo**（RT CompactRIO 即時控制器，含 EtherCAT 主站、兩台伺服從站、C 系列模組 Mod3 類比輸出 / Mod4 數位 I/O / Mod5 類比輸入）。
+- **`KJ_project.aliases`** — 連線 IP 別名：cRIO `192.168.1.100`、主機 `192.168.100.60`。
+- **`SDP-E_rev109(改).xml`** — EtherCAT 裝置描述檔（ESI），供 EtherCAT 主站辨識士林電機伺服驅動器從站。
+- **`pc_server.py`** — `Main/pc_server.py` 的副本（版本略舊，邏輯相同），供上機端就近執行。
+- **`run_server.bat`** — 啟動 `pc_server.py` 的批次檔（內含上機電腦的 Python 路徑，移機需自行修改）。
+- **`6Hz.txt` / `8Hz.txt`** — 參考訊號資料（各 30000 點，1 kHz × 30 秒），供 LabVIEW 載入當輸入路徑。
 
 ---
 

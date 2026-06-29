@@ -19,7 +19,7 @@ time_start=time.time()
 # ============================================================================
 #region
 read = True
-read_file_name = 'ModelBUE1.pth'
+read_file_name = 'Model.pth'
 save = True
 save_file_name = 'Model.pth'
 #endregion
