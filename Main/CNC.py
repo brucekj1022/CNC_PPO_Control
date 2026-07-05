@@ -730,7 +730,7 @@ class Costfunction:
                 insert_pos = np.searchsorted(self.resonanceTable[0, :], freq)
                 new_col = np.array([
                     [freq],    # 頻率
-                    [2],       # 檢查真共振步數
+                    [3],       # 檢查真共振步數（=3 對齊實驗；偵測後 +3 步才確認）
                     [None],    # Target
                     [1],       # 延遲步數
                     [True],    # 標記為可加入
