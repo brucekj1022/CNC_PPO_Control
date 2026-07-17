@@ -29,6 +29,17 @@ else:
 #endregion
 
 # ============================================================================
+#                       中途切換受控體 Plant 設定
+# ============================================================================
+#region
+# 範例：第 3 秒從ID_Plant切到test_Plant → [(0.0, 'ID_Plant'), (3.0, 'test_Plant')]
+PLANT_SCHEDULE = [
+    (0.0, 'ID_Plant'),
+    (3.0, 'test_Plant'),
+]
+#endregion
+
+# ============================================================================
 #                              參數區域
 # ============================================================================
 #region
@@ -256,7 +267,38 @@ CC_shaoping = ctrl.tf2ss(ctrl.TransferFunction(CCnub[:8], CCnub[8:], Ts))
 # ============================================================================
 FC = np.zeros((numFC, 2))
 
-Plant = model_x.test_Plant()
+# ---- 依 PLANT_SCHEDULE 建立各段 plant，並補到相同階數（維持 X0 維度）----
+def _pad_tf_order(tf, target_den_deg):
+    """把離散 TF 乘 z^k 補到指定分母階數：H(z) 不變、階數升高（分子分母同乘 z^k）。"""
+    num = list(np.atleast_1d(tf.num[0][0]).astype(float))
+    den = list(np.atleast_1d(tf.den[0][0]).astype(float))
+    k = target_den_deg - (len(den) - 1)
+    if k > 0:
+        num = num + [0.0] * k
+        den = den + [0.0] * k
+    return ctrl.TransferFunction(num, den, tf.dt)
+
+_schedule = sorted(PLANT_SCHEDULE, key=lambda x: x[0])          # 依切換時間排序
+_phase_names = [name for _, name in _schedule]
+_phase_plants = [getattr(model_x, name)() for name in _phase_names]  # 各段 plant dict（建一次固定）
+_max_den_deg = max(len(p['v2p'].den[0][0]) - 1 for p in _phase_plants)
+for p in _phase_plants:                                          # 全部補到最高階
+    p['v2p'] = _pad_tf_order(p['v2p'], _max_den_deg)
+_switch_steps = [int(round(t / (pdl * Ts))) for t, _ in _schedule]  # 秒 → step
+
+def get_phase_index(step):
+    """依目前 step 落在哪個切換點回傳段索引。"""
+    idx = 0
+    for i, sw in enumerate(_switch_steps):
+        if step >= sw:
+            idx = i
+    return idx
+
+print(f"[Plant 排程] {[(t, n) for (t, _), n in zip(_schedule, _phase_names)]}，"
+      f"各段補到 {_max_den_deg} 階")
+Plant = _phase_plants[0]      # 初始段
+_current_phase = 0
+
 path = testpath
 path_index = 0
 num_segments = int((len(path) - path_index) / pdl)
@@ -319,6 +361,14 @@ try:
         #合成新控制器並模擬運行
         status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step % 3])
         path_segment = path[path_index:path_index + pdl]
+
+        #依排程選當前段的 plant（同階數，X0 可安全帶過切換點）
+        phase = get_phase_index(step)
+        if phase != _current_phase:
+            print(f">>> 切換 Plant @ step {step} ({step*pdl*Ts:.2f}s): "
+                  f"{_phase_names[_current_phase]} → {_phase_names[phase]}")
+            _current_phase = phase
+        Plant = _phase_plants[phase]
 
         #使用紹平控制器
         #CC = CC_shaoping
