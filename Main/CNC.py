@@ -204,19 +204,19 @@ class CNCModel:
         return {'v2v': v2v[self.axis], 'v2p': v2p[self.axis], 'Ts': self.Ts}
 
     def test_Plant(self, omega=600, zeta=0.01):
-        """回傳帶有固定共振點的測試模型：串接 600 + 800 rad/s 兩個共振峰。"""
+        """回傳帶有固定共振點的測試模型。"""
         base_plant = self.ID_Plant()
         v2p = base_plant['v2p']
 
-        # 共振峰 1：600 rad/s（分子係數 6，峰值 3×）—— 由 omega 參數指定
+        # 共振峰 1：600 rad/s
         res1 = ctrl.TransferFunction(
-            [1, 6 * zeta * omega, omega**2],
+            [1, 5 * zeta * omega, omega**2],
             [1, 2 * zeta * omega, omega**2]
         )
-        # 共振峰 2：800 rad/s（分子係數 8，峰值 4×）
+        # 共振峰 2：800 rad/s
         omega2 = 800
         res2 = ctrl.TransferFunction(
-            [1, 8 * zeta * omega2, omega2**2],
+            [1, 7 * zeta * omega2, omega2**2],
             [1, 2 * zeta * omega2, omega2**2]
         )
         # 串接兩個共振後離散化

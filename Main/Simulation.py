@@ -21,13 +21,13 @@ time_start = time.time()
 #region
 # --- 模型 ---
 read = True
-use_switch_model = False            # True: 雙模型切換(追蹤+共振), False: 單模型
+use_switch_model = True            # True: 雙模型切換(追蹤+共振), False: 單模型
 if use_switch_model:
     read_file_name1 = 'ModelBUE1.pth'   # 追蹤模型
     read_file_name2 = 'ModelPRE1.pth'   # 共振模型
 else:
     read_file_name  = 'ModelPRE1.pth'   # 單模型
-    
+
 # --- 中途切換受控體 Plant：(切換秒數, CNCModel方法名)；自動補到同階數，X0 可安全帶過切換點 ---
 # 範例：第 3 秒從 ID_Plant 切到 test_Plant → [(0.0, 'ID_Plant'), (3.0, 'test_Plant')]
 PLANT_SCHEDULE = [
