@@ -286,81 +286,89 @@ path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
 last_solved_FC = costfunction_x.last_solved_FC
 s = np.concatenate([state_action(last_solved_FC), path_FFT_magnitude, np.zeros(3)])
 
-for step in range(num_segments + 1):  # 因為 Error 有延遲所以要多一步收集資料
-    #判斷是否發散
-    if np.sqrt(np.mean((ek_buffer[step % 3])**2)) > max_error_um:
-        num_segments = step - 1
-        break
-    if step >= num_segments:
-        continue
-    
-    #產生動作
-    if use_switch_model:
-        if resonance_detected >= 1:
-            if switch == False:
-                print("Switch Model : step ", step, "\n")
-                switch = True
-            a = np.array(NO2agent.choose_action(s))  # 共振模型
-            data_collector['model_used'].append('NO2_resonance')
+# 主迴圈用 try 包住：不論正常結束、例外、或 Ctrl+C，都會落到後面的存檔區
+try:
+    for step in range(num_segments + 1):  # 因為 Error 有延遲所以要多一步收集資料
+        #判斷是否發散
+        if np.sqrt(np.mean((ek_buffer[step % 3])**2)) > max_error_um:
+            num_segments = step - 1
+            break
+        if step >= num_segments:
+            continue
+
+        #產生動作
+        if use_switch_model:
+            if resonance_detected >= 1:
+                if switch == False:
+                    print("Switch Model : step ", step, "\n")
+                    switch = True
+                a = np.array(NO2agent.choose_action(s))  # 共振模型
+                data_collector['model_used'].append('NO2_resonance')
+            else:
+                a = np.array(NO1agent.choose_action(s))  # 追蹤模型
+                data_collector['model_used'].append('NO1_tracking')
         else:
-            a = np.array(NO1agent.choose_action(s))  # 追蹤模型
-            data_collector['model_used'].append('NO1_tracking')
-    else:
-        a = np.array(agent.choose_action(s))  # 單模型
-        data_collector['model_used'].append('model1')
-    
-    action = 10 ** (a / 20)  # 從 dB 轉自然數
-    FC[:, 0] = action[:numFC]  # 頻率
-    FC[:, 1] = action[numFC:]  # 增益
-    FC = FC[np.argsort(FC[:, 0])]  # 按頻率排序
-    
-    #合成新控制器並模擬運行
-    status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step % 3])
-    path_segment = path[path_index:path_index + pdl]
+            a = np.array(agent.choose_action(s))  # 單模型
+            data_collector['model_used'].append('model1')
 
-    #使用紹平控制器
-    #CC = CC_shaoping
+        action = 10 ** (a / 20)  # 從 dB 轉自然數
+        FC[:, 0] = action[:numFC]  # 頻率
+        FC[:, 1] = action[numFC:]  # 增益
+        FC = FC[np.argsort(FC[:, 0])]  # 按頻率排序
 
-    X0, ek_buffer[(step + 2) % 3, :], _ = CNC.SimulateResponse(path_segment.copy(), CC.copy(), Plant['v2p'], X0, Ts)
-    PlotExporter.plot_frame(CC, ID_Plant['v2p'], FC, manual_add_FC)
+        #合成新控制器並模擬運行
+        status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step % 3])
+        path_segment = path[path_index:path_index + pdl]
 
-    #資料存進data_buffer
-    path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index + pdl, dominant_freq)
-    s_ = np.concatenate([
-        state_action(FC), path_FFT_magnitude,
-        state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[(step + 1) % 3]),
-        state_error(ek_buffer[(step + 1) % 3])
-    ])
-    data_buffer[step] = (s.copy(), a.copy(), s_.copy(), FC.copy(), status, CC.copy(), path_segment.copy(), ek_buffer[(step + 2) % 3, :].copy())
-    
-    #收集實驗資料
-    data_collector['CC_list'].append(CC.copy())
-    data_collector['FC_list'].append(FC.copy())
-    data_collector['manual_FC_list'].append(manual_add_FC.copy())
-    data_collector['error_list'].append(ek_buffer[(step + 2) % 3].copy())
-    data_collector['status_list'].append(status)
-    resonance_state = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[step % 3])
-    freq_linear = 10 ** ((resonance_state[0] / 20) * 30) if resonance_state[0] != 0 else 0
-    mag_dB = resonance_state[1] * 30
-    data_collector['resonance_freq_list'].append(freq_linear)
-    data_collector['resonance_gain_list'].append(mag_dB)
-    
-    #準備下一步
-    s = s_
-    path_index += pdl
-    if use_switch_model:
-        if state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[step % 3])[0] != 0:
-            resonance_detected += 1
+        #使用紹平控制器
+        #CC = CC_shaoping
 
-    freq_normalized, mag_normalized = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[step % 3])
-    freq_linear = 10 ** ((freq_normalized / 20) * 30) if freq_normalized != 0 else 0
-    mag_dB = mag_normalized * 30
-    print(
-        f"{step:4d} | "
-        f"{status:<11} | "
-        f"{freq_linear:10.5g} | "
-        f"{mag_dB:12.5g}"
-        )
+        X0, ek_buffer[(step + 2) % 3, :], _ = CNC.SimulateResponse(path_segment.copy(), CC.copy(), Plant['v2p'], X0, Ts)
+        PlotExporter.plot_frame(CC, ID_Plant['v2p'], FC, manual_add_FC)
+
+        #資料存進data_buffer
+        path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index + pdl, dominant_freq)
+        s_ = np.concatenate([
+            state_action(FC), path_FFT_magnitude,
+            state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[(step + 1) % 3]),
+            state_error(ek_buffer[(step + 1) % 3])
+        ])
+        data_buffer[step] = (s.copy(), a.copy(), s_.copy(), FC.copy(), status, CC.copy(), path_segment.copy(), ek_buffer[(step + 2) % 3, :].copy())
+
+        #收集實驗資料
+        data_collector['CC_list'].append(CC.copy())
+        data_collector['FC_list'].append(FC.copy())
+        data_collector['manual_FC_list'].append(manual_add_FC.copy())
+        data_collector['error_list'].append(ek_buffer[(step + 2) % 3].copy())
+        data_collector['status_list'].append(status)
+        resonance_state = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[step % 3])
+        freq_linear = 10 ** ((resonance_state[0] / 20) * 30) if resonance_state[0] != 0 else 0
+        mag_dB = resonance_state[1] * 30
+        data_collector['resonance_freq_list'].append(freq_linear)
+        data_collector['resonance_gain_list'].append(mag_dB)
+
+        #準備下一步
+        s = s_
+        path_index += pdl
+        if use_switch_model:
+            if state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[step % 3])[0] != 0:
+                resonance_detected += 1
+
+        freq_normalized, mag_normalized = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[step % 3])
+        freq_linear = 10 ** ((freq_normalized / 20) * 30) if freq_normalized != 0 else 0
+        mag_dB = mag_normalized * 30
+        print(
+            f"{step:4d} | "
+            f"{status:<11} | "
+            f"{freq_linear:10.5g} | "
+            f"{mag_dB:12.5g}"
+            )
+except KeyboardInterrupt:
+    print("\n[INFO] 使用者中止 (Ctrl+C)，仍會存下已收集的資料...")
+except Exception as e:
+    import traceback
+    print(f"[ERROR] 主迴圈異常中止: {e}，仍會存下已收集的資料...")
+    traceback.print_exc()
 
 
 #計算實驗時長
@@ -422,13 +430,19 @@ experiment_data['resonance_gain_list'] = np.array(data_collector['resonance_gain
 experiment_data['model_used'] = data_collector['model_used']
 experiment_data['switch_step'] = None if not use_switch_model else (None if not switch else next((i for i, m in enumerate(data_collector['model_used']) if m == 'NO2_resonance'), None))
 
-#保存數據到 PlotExporter 建立的資料夾
-save_dir = PlotExporter.get_experiment_folder()
-save_path = os.path.join(save_dir, "simulation_data.npz")
-np.savez_compressed(save_path, **experiment_data, allow_pickle=True)
-print(f"\n實驗數據已保存至: {save_path}")
-print(f"實驗時長: {int(experiment_duration//60)}分{int(experiment_duration%60)}秒")
+#保存數據到 PlotExporter 建立的資料夾（存檔本身也保護，避免半途失敗）
+try:
+    save_dir = PlotExporter.get_experiment_folder()
+    save_path = os.path.join(save_dir, "simulation_data.npz")
+    np.savez_compressed(save_path, **experiment_data, allow_pickle=True)
+    print(f"\n實驗數據已保存至: {save_path}")
+    print(f"實驗時長: {int(experiment_duration//60)}分{int(experiment_duration%60)}秒")
+except Exception as e:
+    print(f"[ERROR] 存檔失敗: {e}")
 
-#保存MP4和繪製誤差
-PlotExporter.save_mp4()
-PlotExporter.plot_error(data_collector['error_list'])
+#保存MP4和繪製誤差（失敗不影響已存的資料）
+try:
+    PlotExporter.save_mp4()
+    PlotExporter.plot_error(data_collector['error_list'])
+except Exception as e:
+    print(f"[WARNING] MP4/誤差圖產生失敗（資料已存）: {e}")

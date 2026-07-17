@@ -26,7 +26,7 @@ import CNC
 # ============================================================
 # 執行模式設定
 # ============================================================
-BATCH_MODE = True  # True = 批次處理（使用 BATCH_EXPERIMENTS）, False = 手動選擇
+BATCH_MODE = False  # True = 批次處理（使用 BATCH_EXPERIMENTS）, False = 手動選擇
 
 # 手動模式設定（BATCH_MODE = False 時使用）
 SHOW_EVENT_LINES = True   # 設為 True 顯示所有事件線，False 則不顯示
@@ -703,7 +703,7 @@ def display_basic_info(data, return_string=False):
         lines.append(f"  路徑總長度: {data['path_length']}")
     elif 'reference_path' in data:
         lines.append(f"  路徑總長度: {len(data['reference_path'])}")
-    lines.append(f"  路徑區間數: {data['num_districts']}")
+    lines.append(f"  路徑區間數: {data.get('num_segments', 'N/A')}")
     path_len = data.get('path_length', len(data.get('reference_path', [])))
     lines.append(f"  路徑時間: {path_len * data['Ts']} s")
     

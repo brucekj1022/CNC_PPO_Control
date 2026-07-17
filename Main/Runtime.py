@@ -23,7 +23,7 @@ time_start = time.time()
 # ============================================================================
 #region
 read=True
-use_switch_model = False  # True: 雙模型切換, False: 單模型
+use_switch_model = True  # True: 雙模型切換, False: 單模型
 if use_switch_model:
     read_file_name1='ModelBUE1.pth'  # 追蹤模型
     read_file_name2='ModelPRE1.pth'  # 共振模型
@@ -320,109 +320,117 @@ last_solved_FC = costfunction_x.last_solved_FC
 s = np.concatenate([state_action(last_solved_FC), path_FFT_magnitude, np.zeros(3)])
 print("Standby for link in \n")
 
-for step in range(num_segments + 1):  # 因為 Error 有延遲所以要多一步收集資料
-    try:
-        #等待連線（10秒超時）
-        srv.settimeout(10.0)
-        conn, addr = srv.accept()
-        #從labview收ek
-        ek = pc_server.recv(conn)
-        if ek is None or len(ek) != pdl:
-            print("[ERROR] recv failed or wrong length, saving data and exit...")
+# 主迴圈用 try 包住：不論正常 break、例外、或 Ctrl+C，都會落到後面的存檔區
+try:
+    for step in range(num_segments + 1):  # 因為 Error 有延遲所以要多一步收集資料
+        try:
+            #等待連線（10秒超時）
+            srv.settimeout(10.0)
+            conn, addr = srv.accept()
+            #從labview收ek
+            ek = pc_server.recv(conn)
+            if ek is None or len(ek) != pdl:
+                print("[ERROR] recv failed or wrong length, saving data and exit...")
+                break
+        except socket.timeout:
+            print(f"[WARNING] Accept timeout at step {step}, no LabVIEW connection for 10s, saving data and exit...")
             break
-    except socket.timeout:
-        print(f"[WARNING] Accept timeout at step {step}, no LabVIEW connection for 10s, saving data and exit...")
-        break
-    except Exception as e:
-        print(f"[ERROR] Connection error at step {step}: {e}, saving data and exit...")
-        break
-
-    #建構state並收集error
-    if step >= 1:
-        data_collector['error_list'].append(ek.copy())
-        if step == num_segments:
+        except Exception as e:
+            print(f"[ERROR] Connection error at step {step}: {e}, saving data and exit...")
             break
-        path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
-        s = np.concatenate([
-            state_action(FC), path_FFT_magnitude,
-            state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek),
-            state_error(ek)
-        ])
 
-        #雙模型模式：檢測共振換model
+        #建構state並收集error
+        if step >= 1:
+            data_collector['error_list'].append(ek.copy())
+            if step == num_segments:
+                break
+            path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
+            s = np.concatenate([
+                state_action(FC), path_FFT_magnitude,
+                state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek),
+                state_error(ek)
+            ])
+
+            #雙模型模式：檢測共振換model
+            if use_switch_model:
+                print(state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)[0])
+                if state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)[0] != 0:
+                    resonance_detected += 1
+
+        #產生動作
         if use_switch_model:
-            print(state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)[0])
-            if state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)[0] != 0:
-                resonance_detected += 1
+            if resonance_detected>=1:
+                if switch==False:
+                    print("Switch Model : step ", step,"\n")
+                    switch=True
+                a = np.array(NO2agent.choose_action(s))  # 共振模型
+                data_collector['model_used'].append('NO2_resonance')
+            else:
+                a = np.array(NO1agent.choose_action(s))  # 追蹤模型
+                data_collector['model_used'].append('NO1_tracking')
+        else:
+            a = np.array(agent.choose_action(s))  # 單模型
+            data_collector['model_used'].append('model1')
 
-    #產生動作
-    if use_switch_model:
-        if resonance_detected>=1: 
-            if switch==False:
-                print("Switch Model : step ", step,"\n") 
-                switch=True
-            a = np.array(NO2agent.choose_action(s))  # 共振模型
-            data_collector['model_used'].append('NO2_resonance')
-        else: 
-            a = np.array(NO1agent.choose_action(s))  # 追蹤模型
-            data_collector['model_used'].append('NO1_tracking')
-    else:
-        a = np.array(agent.choose_action(s))  # 單模型
-        data_collector['model_used'].append('model1')
-    
-    action = 10.0 ** (a / 20.0)               # 線性倍率
-    FC[:, 0] = action[:numFC]                 # 頻率
-    FC[:, 1] = action[numFC:]                 # 增益
-    FC = FC[np.argsort(FC[:, 0])]             # 按頻率排序
-    
-    #合成新控制器
-    status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek)
-    path_segment = path[path_index:path_index + pdl]
-    
-    #使用固定控制器 (可選: CC_shaoping, CC_X_central, CC_X_resonance_old, CC_X_resonance_g6_w800, CC_X_boost_6db)
-    # CC = CC_shaoping
+        action = 10.0 ** (a / 20.0)               # 線性倍率
+        FC[:, 0] = action[:numFC]                 # 頻率
+        FC[:, 1] = action[numFC:]                 # 增益
+        FC = FC[np.argsort(FC[:, 0])]             # 按頻率排序
 
-    #收集實驗數據（每步）
-    data_collector['CC_list'].append(CC.copy())
-    data_collector['FC_list'].append(FC.copy())
-    data_collector['manual_FC_list'].append(manual_add_FC.copy())
-    data_collector['status_list'].append(status)
+        #合成新控制器
+        status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek)
+        path_segment = path[path_index:path_index + pdl]
 
-    #轉出CC
-    CC_tf = ctrl.ss2tf(CC)
-    den = np.array(CC_tf.den[0][0])
-    num = np.array(CC_tf.num[0][0])
-    if len(num) < len(den):
-        num = np.pad(num, (0, len(den) - len(num)))
-    CCdata = np.concatenate((num, den))
-    
-    #TCP傳輸資料
-    try:
-        ok = pc_server.send(conn, CCdata)
-        if not ok:
-            print("[ERROR] send failed, saving data and exit...")
+        #使用固定控制器 (可選: CC_shaoping, CC_X_central, CC_X_resonance_old, CC_X_resonance_g6_w800, CC_X_boost_6db)
+        # CC = CC_shaoping
+
+        #收集實驗數據（每步）
+        data_collector['CC_list'].append(CC.copy())
+        data_collector['FC_list'].append(FC.copy())
+        data_collector['manual_FC_list'].append(manual_add_FC.copy())
+        data_collector['status_list'].append(status)
+
+        #轉出CC
+        CC_tf = ctrl.ss2tf(CC)
+        den = np.array(CC_tf.den[0][0])
+        num = np.array(CC_tf.num[0][0])
+        if len(num) < len(den):
+            num = np.pad(num, (0, len(den) - len(num)))
+        CCdata = np.concatenate((num, den))
+
+        #TCP傳輸資料
+        try:
+            ok = pc_server.send(conn, CCdata)
+            if not ok:
+                print("[ERROR] send failed, saving data and exit...")
+                break
+        except Exception as e:
+            print(f"[ERROR] Send error at step {step}: {e}, saving data and exit...")
             break
-    except Exception as e:
-        print(f"[ERROR] Send error at step {step}: {e}, saving data and exit...")
-        break
 
-    #準備下一步
-    path_index += pdl
+        #準備下一步
+        path_index += pdl
 
-    #儲存共振資料並打印
-    resonance_state = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)
-    freq_normalized = resonance_state[0]
-    mag_normalized = resonance_state[1]
-    freq_linear = 10 ** ((freq_normalized / 20) * 30) if freq_normalized != 0 else 0
-    mag_dB = mag_normalized * 30
-    data_collector['resonance_freq_list'].append(freq_linear)
-    data_collector['resonance_gain_list'].append(mag_dB)
-    print(
-        f"{step:4d} | "
-        f"{status:<11} | "
-        f"{freq_linear:10.5g} | "
-        f"{mag_dB:12.5g}"
-    )
+        #儲存共振資料並打印
+        resonance_state = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)
+        freq_normalized = resonance_state[0]
+        mag_normalized = resonance_state[1]
+        freq_linear = 10 ** ((freq_normalized / 20) * 30) if freq_normalized != 0 else 0
+        mag_dB = mag_normalized * 30
+        data_collector['resonance_freq_list'].append(freq_linear)
+        data_collector['resonance_gain_list'].append(mag_dB)
+        print(
+            f"{step:4d} | "
+            f"{status:<11} | "
+            f"{freq_linear:10.5g} | "
+            f"{mag_dB:12.5g}"
+        )
+except KeyboardInterrupt:
+    print("\n[INFO] 使用者中止 (Ctrl+C)，仍會存下已收集的資料...")
+except Exception as e:
+    import traceback
+    print(f"[ERROR] 主迴圈異常中止: {e}，仍會存下已收集的資料...")
+    traceback.print_exc()
  
 #關閉server
 try:
@@ -489,12 +497,18 @@ experiment_data['resonance_gain_list'] = np.array(data_collector['resonance_gain
 experiment_data['model_used'] = data_collector['model_used']
 experiment_data['switch_step'] = None if not use_switch_model else (None if not switch else next((i for i, m in enumerate(data_collector['model_used']) if m == 'NO2_resonance'), None))
 
-#保存數據到 PlotExporter 建立的資料夾
-save_dir = PlotExporter.get_experiment_folder()
-save_path = os.path.join(save_dir, "runtime_data.npz")
-np.savez_compressed(save_path, **experiment_data, allow_pickle=True)
-print(f"\n實驗數據已保存至: {save_path}")
-print(f"實驗時長: {int(experiment_duration//60)}分{int(experiment_duration%60)}秒")
+#保存數據到 PlotExporter 建立的資料夾（存檔本身也保護，避免半途失敗）
+try:
+    save_dir = PlotExporter.get_experiment_folder()
+    save_path = os.path.join(save_dir, "runtime_data.npz")
+    np.savez_compressed(save_path, **experiment_data, allow_pickle=True)
+    print(f"\n實驗數據已保存至: {save_path}")
+    print(f"實驗時長: {int(experiment_duration//60)}分{int(experiment_duration%60)}秒")
+except Exception as e:
+    print(f"[ERROR] 存檔失敗: {e}")
 
-#畫出誤差
-PlotExporter.plot_error(data_collector['error_list'])
+#畫出誤差（畫圖失敗不影響已存的資料）
+try:
+    PlotExporter.plot_error(data_collector['error_list'])
+except Exception as e:
+    print(f"[WARNING] 誤差圖繪製失敗（資料已存）: {e}")

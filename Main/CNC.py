@@ -208,9 +208,9 @@ class CNCModel:
         base_plant = self.ID_Plant()
         v2p = base_plant['v2p']
 
-        # 共振峰 1：600 rad/s（分子係數 8，峰值 4×）—— 由 omega 參數指定
+        # 共振峰 1：600 rad/s（分子係數 6，峰值 3×）—— 由 omega 參數指定
         res1 = ctrl.TransferFunction(
-            [1, 8 * zeta * omega, omega**2],
+            [1, 6 * zeta * omega, omega**2],
             [1, 2 * zeta * omega, omega**2]
         )
         # 共振峰 2：800 rad/s（分子係數 8，峰值 4×）
