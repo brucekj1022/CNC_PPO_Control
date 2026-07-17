@@ -15,30 +15,45 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 time_start=time.time()
 
 # ============================================================================
-#                              存取設定
+#                          操作區（每次執行前調整）
 # ============================================================================
 #region
+# --- 模型讀寫 ---
 read = True
-read_file_name = 'Model.pth'
+read_file_name = 'Model.pth'        # 續訓來源
 save = True
-save_file_name = 'Model.pth'
+save_file_name = 'Model.pth'        # 存檔目標（每 100 輪存）
+
+# --- 學習率排程 [(學習率, 持續輪數), ...]（高學習率用 ID_Plant、低學習率切 PRE_Plant）---
+lr_schedule = [
+    (1e-5, 3000),
+    (1e-6, 6000),
+    (1e-7, 6000),
+]
+
+# --- 繪圖 ---
+enable_plot = False                 # True: 輸出 Bode 圖/MP4/誤差圖（會變慢）
 #endregion
 
 # ============================================================================
-#                              參數區域
+#                          固定參數（一般勿動）
 # ============================================================================
 #region
-# === 模擬參數 ===
-Ts = 0.001              # 取樣時間 (s)
-pdl = 300               # 路徑區段長度 (samples)，即 300ms 一個區間
-max_error_um = 10000    # 最大容許誤差 (um)，超過視為發散
+Ts   = 0.001                        # 取樣時間 (s)【全域固定】
+pdl  = 300                          # 路徑區段長度 (samples)，300ms/區間【全域固定】
+max_error_um = 10000                # 最大容許誤差 (um)，超過視為發散
+n_states = 131                      # 狀態維度 action(28)+path_FFT(100)+resonance(2)+error(1)【與 .pth 綁定】
+numFC    = 14                       # 頻率限制點數量【與 .pth 綁定】
+bound = 20 * np.log10(3000)         # Actor 輸出上下界 (dB)
+x_polegain = 0.4352                 # X軸極點縮放係數
+z_polegain = 0.4952                 # Z軸極點縮放係數
+total_iterations = sum(rounds for _, rounds in lr_schedule)  # 總訓練輪數（由 lr_schedule 推算）
 
-# === 神經網路狀態/動作 ===
-n_states = 131          # 狀態維度: action(28) + path_FFT(100) + resonance(2) + error(1)
-numFC = 14              # 頻率限制點數量
-bound = 20 * np.log10(3000)  # Actor 輸出上下界 (dB)
+# --- 共振偵測 ---
+fft_limit_freq  = 15                # path_FFT 頻率上限 (Hz)
+num_low_freq_FC = 3                 # 低頻限制點數量
 
-# === PPO 超參數 ===
+# --- PPO 超參數 ---
 class PPO_parameter:
     n_step_learning = 20    # N-step 學習步數
     mini_batch = 30         # Mini-batch 大小
@@ -49,16 +64,7 @@ class PPO_parameter:
     c_update_steps = 10     # Critic 更新次數
     a_update_steps = 3      # Actor 更新次數
 
-# === 學習率排程 ===
-# 格式: [(學習率, 持續輪數), ...]
-lr_schedule = [
-    (1e-5, 3000),  # 前 1000 輪用 1e-5
-    (1e-6, 6000),  # 接下來 2000 輪用 1e-6
-    (1e-7, 6000),
-]
-total_iterations = sum(rounds for _, rounds in lr_schedule)  # 總訓練輪數
-
-# === QCQP 控制器參數 ===
+# --- QCQP reward 權重（本檔專用，與 Simulation/Runtime 刻意不同，勿連動改）---
 class CNC_parameter:
     Lq = 10                 # Q 參數階數
     w_sumError = 1e+3       # 誤差權重
@@ -66,17 +72,7 @@ class CNC_parameter:
     w_Wgc = 1e+3            # Wgc 懲罰權重 (semiSolved)
     w_earlyTrain = 5e-3     # Infeasible 懲罰權重
 
-x_polegain = 0.4352         # X軸極點縮放係數
-z_polegain = 0.4952         # Z軸極點縮放係數
-
-# === FFT 參數 ===
-fft_limit_freq = 15         # path_FFT 頻率上限 (Hz)
-num_low_freq_FC = 3         # 低頻限制點數量
-
-# === 繪圖設定 ===
-enable_plot = False         # True: 輸出 Bode 圖/MP4/誤差圖
-
-# === 手動 FC 初始值 (頻率 rad/s, 增益) ===
+# --- 手動 FC 初始值 (頻率 rad/s, 增益) ---
 manual_FC = np.array([
     [0.1,   1000],
     [1,     100],
@@ -253,7 +249,6 @@ else :
 all_iter_r = []
 FC = np.zeros((numFC, 2))
 current_lr = None  # 記錄當前學習率，用於偵測切換
-#endregion
 
 for iteration in range(1, total_iterations + 1):
     # 檢查是否需要切換學習率（基於累計輪數）
@@ -363,3 +358,4 @@ plt.title("Return")
 plt.plot(np.arange(len(all_iter_r)), all_iter_r)
 plt.show()
 show_elapsed_time(time_start, time_finish)
+#endregion

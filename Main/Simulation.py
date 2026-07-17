@@ -16,23 +16,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 time_start = time.time()
 
 # ============================================================================
-#                              存取資料
+#                          操作區（每次執行前調整）
 # ============================================================================
 #region
-read=True
-use_switch_model = False # True: 雙模型切換, False: 單模型
+# --- 模型 ---
+read = True
+use_switch_model = False            # True: 雙模型切換(追蹤+共振), False: 單模型
 if use_switch_model:
-    read_file_name1='ModelBUE1.pth'  # 追蹤模型
-    read_file_name2='ModelPRE1.pth'  # 共振模型
+    read_file_name1 = 'ModelBUE1.pth'   # 追蹤模型
+    read_file_name2 = 'ModelPRE1.pth'   # 共振模型
 else:
-    read_file_name='ModelPRE1.pth'
-#endregion
-
-# ============================================================================
-#                       中途切換受控體 Plant 設定
-# ============================================================================
-#region
-# 範例：第 3 秒從ID_Plant切到test_Plant → [(0.0, 'ID_Plant'), (3.0, 'test_Plant')]
+    read_file_name  = 'ModelPRE1.pth'   # 單模型
+    
+# --- 中途切換受控體 Plant：(切換秒數, CNCModel方法名)；自動補到同階數，X0 可安全帶過切換點 ---
+# 範例：第 3 秒從 ID_Plant 切到 test_Plant → [(0.0, 'ID_Plant'), (3.0, 'test_Plant')]
 PLANT_SCHEDULE = [
     (0.0, 'ID_Plant'),
     (3.0, 'test_Plant'),
@@ -40,44 +37,40 @@ PLANT_SCHEDULE = [
 #endregion
 
 # ============================================================================
-#                              參數區域
+#                          固定參數（一般勿動）
 # ============================================================================
 #region
-# === 模擬參數 ===
-Ts = 0.001              # 取樣時間 (s)
-pdl = 300               # 路徑區段長度 (samples)，即 300ms 一個區間
-max_error_um = 10000    # 最大容許誤差 (um)，超過視為發散
+Ts   = 0.001                        # 取樣時間 (s)【全域固定】
+pdl  = 300                          # 路徑區段長度 (samples)，300ms/區間【全域固定】
+n_states = 131                      # 狀態維度 action(28)+path_FFT(100)+resonance(2)+error(1)【與 .pth 綁定】
+numFC    = 14                       # 頻率限制點數量【與 .pth 綁定】
+bound = 20 * np.log10(3000)         # Actor 輸出上下界 (dB)
+x_polegain = 0.4352                 # X軸極點縮放係數
+z_polegain = 0.4952                 # Z軸極點縮放係數
 
-# === 神經網路狀態/動作 ===
-n_states = 131          # 狀態維度: action(28) + path_FFT(100) + resonance(2) + error(1)
-numFC = 14              # 頻率限制點數量
-bound = 20 * np.log10(3000)  # Actor 輸出上下界 (dB)
+# --- 共振偵測 / 發散判斷 ---
+fft_limit_freq  = 15                # path_FFT 頻率上限 (Hz)
+num_low_freq_FC = 3                 # 低頻限制點數量
+max_error_um    = 10000             # 最大容許誤差 (um)，超過視為發散
 
-# === PPO 超參數 ===
-class PPO_parameter:
-    n_step_learning = 20    # N-step 學習步數
-    mini_batch = 30         # Mini-batch 大小
-    batch_size = 2000       # Replay buffer 大小
-    n_round_batch = 60      # 每輪最大 batch 數
-    gamma = 0.9             # 折扣因子
-    epsilon = 0.03          # PPO clip 範圍
-    c_update_steps = 10     # Critic 更新次數
-    a_update_steps = 3      # Actor 更新次數
-
-# === QCQP 控制器參數 ===
+# --- QCQP reward 權重（本檔專用，與 Training/Runtime 刻意不同，勿連動改）---
 class CNC_parameter:
-    Lq = 10                 # Q 參數階數
-    w_sumError = 1e+3       # 誤差權重
-    w_FCfreq = 1e+0         # FC 分布均勻度權重
-    w_Wgc = 1e+3            # Wgc 懲罰權重 (semiSolved)
-    w_earlyTrain = 5e-3     # Infeasible 懲罰權重
+    Lq           = 10               # Q 參數階數
+    w_sumError   = 1e+3             # 誤差權重
+    w_FCfreq     = 1e+0             # FC 分布均勻度權重
+    w_Wgc        = 1e+3             # Wgc 懲罰權重 (semiSolved)
+    w_earlyTrain = 5e-3             # Infeasible 懲罰權重
 
-x_polegain = 0.4352         # X軸極點縮放係數
-z_polegain = 0.4952         # Z軸極點縮放係數
-
-# === FFT 參數 ===
-fft_limit_freq = 15         # path_FFT 頻率上限 (Hz)
-num_low_freq_FC = 3         # 低頻限制點數量
+# PPO 超參數（模擬不訓練，僅建立網路用）
+class PPO_parameter:
+    n_step_learning = 20
+    mini_batch = 30
+    batch_size = 2000
+    n_round_batch = 60
+    gamma = 0.9
+    epsilon = 0.03
+    c_update_steps = 10
+    a_update_steps = 3
 #endregion
 
 # ============================================================================
