@@ -432,7 +432,7 @@ def dynamic_fft_mask_animation():
         plt.axvspan(mask_start, mask_end, color='red', alpha=0.3, label="FFT Mask Region", zorder=2)
         plt.xlabel("Time")
         plt.ylabel("Magnitude")
-        plt.title(f'Dynamic Mask Step {step + 1}')
+        plt.title(f'Dynamic Mask Step {step}')
         plt.tight_layout()
         plt.savefig(f'frames/frame_{step:03d}.png')
         plt.clf()

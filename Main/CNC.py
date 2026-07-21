@@ -210,13 +210,13 @@ class CNCModel:
 
         # 共振峰 1：600 rad/s
         res1 = ctrl.TransferFunction(
-            [1, 5 * zeta * omega, omega**2],
+            [1, 6 * zeta * omega, omega**2],
             [1, 2 * zeta * omega, omega**2]
         )
         # 共振峰 2：800 rad/s
         omega2 = 800
         res2 = ctrl.TransferFunction(
-            [1, 7 * zeta * omega2, omega2**2],
+            [1, 8 * zeta * omega2, omega2**2],
             [1, 2 * zeta * omega2, omega2**2]
         )
         # 串接兩個共振後離散化
@@ -939,7 +939,7 @@ class PlotExporter:
         plt.ylim(-70, 70)
         plt.xlabel("Frequency (rad/s)")
         plt.ylabel("Magnitude (dB)")
-        plt.title(f'Step {self.step + 1}')
+        plt.title(f'Step {self.step}')
         plt.legend(loc='upper right')
 
         filename = os.path.join(self.frames_folder, f'frame_{self.step:03d}.png')

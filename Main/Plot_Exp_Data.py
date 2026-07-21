@@ -246,6 +246,60 @@ def analyze_open_loop_margins(controller, plant, Ts, omega=None):
     }
 
 
+# ============================================================
+# 事件標記線（共用）
+# ============================================================
+# 事件值可為「單一時間」或「時間清單」；清單用於雙/多共振會多次出現的事件。
+_EVENT_STYLES = {
+    'resonance_detected': {'color': 'red',    'linestyle': (0, (1, 1)),           'label': 'Add Resonance'},
+    'switch_controller':  {'color': 'blue',   'linestyle': (0, (5, 5)),           'label': 'Switch Model'},
+    'add_fc':             {'color': 'green',  'linestyle': (0, (3, 1, 1, 1)),     'label': 'RSS add FC'},
+    'controller_apply':   {'color': 'purple', 'linestyle': (0, (5, 1, 1, 1, 1, 1)),'label': 'Controller Apply'},
+}
+_EVENT_ORDER = ['resonance_detected', 'switch_controller', 'add_fc', 'controller_apply']
+
+
+def detect_fc_add_steps(manual_FC_list, freq_tol=10):
+    """從 manual_FC_list 找出每次「新增一個限制點頻率」的 step（支援雙/多共振）。
+
+    manual_FC_list[step] 是該步已加入的限制點清單（會累積）；
+    每當出現一個先前沒見過的頻率，就視為一次「加入限制點」。
+    """
+    seen = []
+    add_steps = []
+    for step, mfc in enumerate(manual_FC_list):
+        if mfc is None or len(mfc) == 0:
+            continue
+        for fc in mfc:
+            f = float(fc[0])
+            if not any(abs(f - s) < freq_tol for s in seen):
+                seen.append(f)
+                add_steps.append(step)
+    return add_steps
+
+
+def draw_event_lines(events, axes=None):
+    """在圖上畫事件垂直線。
+
+    events：dict，值可為單一時間或時間清單（清單→畫多條，同類只顯示一次圖例）。
+    axes：None 時畫在當前 plt；給定多個子圖時每個都畫（性能指標圖用）。
+    """
+    if not events:
+        return
+    targets = axes if axes is not None else [plt]
+    for name in _EVENT_ORDER:
+        if name not in events or events[name] is None:
+            continue
+        val = events[name]
+        times = list(val) if isinstance(val, (list, tuple, np.ndarray)) else [val]
+        style = _EVENT_STYLES[name]
+        for tgt in targets:
+            for i, t in enumerate(times):
+                tgt.axvline(x=t, color=style['color'], linestyle=style['linestyle'],
+                            linewidth=3.0, alpha=0.8,
+                            label=style['label'] if i == 0 else None)
+
+
 class PlotExporter:
     """繪圖導出工具類"""
     def __init__(self, folder='frames', video_name='frequency_response.mp4', fps=5):
@@ -280,7 +334,7 @@ class PlotExporter:
         plt.ylim(-70, 70)
         plt.xlabel("Frequency (rad/s)")
         plt.ylabel("Magnitude (dB)")
-        plt.title(f'Step {self.step + 1}')
+        plt.title(f'Step {self.step}')
 
         plt.tight_layout()  # 自動收進軸標籤，避免文字被切掉（不改變圖框尺寸）
         filename = f'{self.folder}/frame_{self.step:03d}.png'
@@ -320,21 +374,8 @@ class PlotExporter:
             plt.ylim(-30, 30)
         
         # 添加事件標記線
-        if events:
-            event_styles = {
-                'resonance_detected': {'color': 'red', 'linestyle': (0, (1, 1)), 'label': 'Add Resonance'},              # 紅色密集點線
-                'switch_controller': {'color': 'blue', 'linestyle': (0, (5, 5)), 'label': 'Switch Model'},              # 藍色虛線
-                'first_manual_fc': {'color': 'green', 'linestyle': (0, (3, 1, 1, 1)), 'label': 'RSS add FC'},      # 綠色點虛線
-                'first_fc_controller_used': {'color': 'purple', 'linestyle': (0, (5, 1, 1, 1, 1, 1)), 'label': 'Controller Apply'}  # 紫色雙點虛線
-            }
-            
-            event_order = ['resonance_detected', 'switch_controller', 'first_manual_fc', 'first_fc_controller_used']
-            for event_name in event_order:
-                if event_name in events and events[event_name] is not None:
-                    style = event_styles[event_name]
-                    plt.axvline(x=events[event_name], color=style['color'], linestyle=style['linestyle'], 
-                               linewidth=3.0, alpha=0.8, label=style['label'])
-        
+        draw_event_lines(events)
+
         plt.title("Error")
         plt.xlabel("time(s)")
         plt.ylabel("Magnitude(um)")
@@ -361,8 +402,8 @@ class PlotExporter:
         Ts : float
             採樣時間，默認0.001秒
         events : dict, optional
-            事件時間點字典，鍵為事件名稱，值為時間（秒）
-            例如：{'switch_controller': 25.5, 'first_manual_fc': 10.2, 'resonance_detected': 5.0}
+            事件時間點字典，值可為單一時間或時間清單（秒）
+            例如：{'switch_controller': 25.5, 'add_fc': [10.2, 18.6], 'controller_apply': [10.5, 18.9]}
         """
         plant = ctrl.tf2ss(plant)
         num_steps = len(CC_list)
@@ -429,25 +470,8 @@ class PlotExporter:
         
         # 添加事件標記線
         if events:
-            event_styles = {
-                'resonance_detected': {'color': 'red', 'linestyle': (0, (1, 1)), 'label': 'Add Resonance'},              # 紅色密集點線
-                'switch_controller': {'color': 'blue', 'linestyle': (0, (5, 5)), 'label': 'Switch Model'},              # 藍色虛線
-                'first_manual_fc': {'color': 'green', 'linestyle': (0, (3, 1, 1, 1)), 'label': 'RSS add FC'},      # 綠色點虛線
-                'first_fc_controller_used': {'color': 'purple', 'linestyle': (0, (5, 1, 1, 1, 1, 1)), 'label': 'Controller Apply'}  # 紫色雙點虛線
-            }
-            
-            # 按照指定順序添加事件線，確保圖例順序正確
-            event_order = ['resonance_detected', 'switch_controller', 'first_manual_fc', 'first_fc_controller_used']
-            
-            for event_name in event_order:
-                if event_name in events and events[event_name] is not None:
-                    style = event_styles[event_name]
-                    for ax in axes:
-                        ax.axvline(x=events[event_name], color=style['color'], linestyle=style['linestyle'], 
-                                   linewidth=3.0, alpha=0.8, label=style['label'])
-            
-            # 只在第一個子圖添加圖例
-            axes[0].legend(loc='upper right')
+            draw_event_lines(events, axes=axes)
+            axes[0].legend(loc='upper right')   # 只在第一個子圖顯示圖例
          
         plt.tight_layout()
         plt.show()
@@ -838,18 +862,12 @@ def plot_error(data, plotter, experiment_folder, show_events=True, resonance_tim
         if data.get('switch_step') is not None:
             events['switch_controller'] = data['switch_step'] * time_per_step
         
-        # 2. 第一個 manual FC 被加入的時間
+        # 2. 每次「加入限制點」的時間（雙/多共振會多次）＋ 2.1 對應「控制器應用」（下一步）
         manual_FC_list = data.get('manual_FC_list', [])
-        first_fc_step = None
-        for step, manual_fc in enumerate(manual_FC_list):
-            if manual_fc is not None and len(manual_fc) > 0:
-                events['first_manual_fc'] = step * time_per_step
-                first_fc_step = step
-                break
-        
-        # 2.1. 第一個限制點控制器被使用的時間（加入後的下一步）
-        if first_fc_step is not None:
-            events['first_fc_controller_used'] = (first_fc_step + 1) * time_per_step
+        add_steps = detect_fc_add_steps(manual_FC_list)
+        if add_steps:
+            events['add_fc'] = [s * time_per_step for s in add_steps]
+            events['controller_apply'] = [(s + 1) * time_per_step for s in add_steps]
         
         # 3. 共振檢測時間（由用戶指定）
         if resonance_time is not None:
@@ -905,18 +923,12 @@ def plot_margins(data, plotter, experiment_folder, show_events=True, resonance_t
         if data.get('switch_step') is not None:
             events['switch_controller'] = data['switch_step'] * time_per_step
         
-        # 2. 第一個 manual FC 被加入的時間
+        # 2. 每次「加入限制點」的時間（雙/多共振會多次）＋ 2.1 對應「控制器應用」（下一步）
         manual_FC_list = data.get('manual_FC_list', [])
-        first_fc_step = None
-        for step, manual_fc in enumerate(manual_FC_list):
-            if manual_fc is not None and len(manual_fc) > 0:
-                events['first_manual_fc'] = step * time_per_step
-                first_fc_step = step
-                break
-        
-        # 2.1. 第一個限制點控制器被使用的時間（加入後的下一步）
-        if first_fc_step is not None:
-            events['first_fc_controller_used'] = (first_fc_step + 1) * time_per_step
+        add_steps = detect_fc_add_steps(manual_FC_list)
+        if add_steps:
+            events['add_fc'] = [s * time_per_step for s in add_steps]
+            events['controller_apply'] = [(s + 1) * time_per_step for s in add_steps]
         
         # 3. 共振檢測時間（由用戶指定）
         if resonance_time is not None:
