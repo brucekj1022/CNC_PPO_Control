@@ -258,6 +258,7 @@ CC_shaoping = ctrl.tf2ss(ctrl.TransferFunction(CCnub[:8], CCnub[8:], Ts))
 # ============================================================================
 #                             實驗開始
 # ============================================================================
+#region
 FC = np.zeros((numFC, 2))
 
 # ---- 依 PLANT_SCHEDULE 建立各段 plant，並補到相同階數（維持 X0 維度）----
@@ -316,57 +317,22 @@ data_collector = {
     'model_used': []
 }
 
-#準備第一個 state（誤差/共振全 0）：用來產生「第一個控制器」（＝Runtime step 0 的做法：神經網路用零狀態 choose_action）
+#準備第一個 state
 path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
 last_solved_FC = costfunction_x.last_solved_FC
 s = np.concatenate([state_action(last_solved_FC), path_FFT_magnitude, np.zeros(3)])
 
-pending = None   # 「已送出、正在驅動當前這一段」的控制器；下一輪才模擬出它的誤差（＝Runtime 的致動延遲）
-
-# 主迴圈：照抄 Runtime 的「收→產生→送」順序 —— 控制器這一步產生，下一段才生效
-# 用 try 包住：不論正常結束、例外、或 Ctrl+C，都會落到後面的存檔區
+# 主迴圈用 try 包住：不論正常結束、例外、或 Ctrl+C，都會落到後面的存檔區
 try:
-    for step in range(num_segments + 1):  # 多一步：把最後一段送出的控制器誤差收回來
-        if pending is not None:
-            #（收）模擬「上一步送出的控制器」跑「它負責的那一段」→ 得到那一段的誤差
-            X0, ek, _ = CNC.SimulateResponse(pending['seg'].copy(), pending['CC'].copy(), pending['plant'], X0, Ts)
-
-            #收集：CC_list[k] 與 error_list[k] 對齊（error_list[k] 就是 CC_list[k] 跑出來的誤差）
-            data_collector['CC_list'].append(pending['CC'].copy())
-            data_collector['FC_list'].append(pending['FC'].copy())
-            data_collector['manual_FC_list'].append(pending['manual'].copy())
-            data_collector['error_list'].append(ek.copy())
-            data_collector['status_list'].append(pending['status'])
-            data_collector['model_used'].append(pending['model'])
-            resonance_state = state_max_resonance(pending['CC'], ID_Plant["v2p"], Ts, pending['seg'], ek)
-            freq_linear = 10 ** ((resonance_state[0] / 20) * 30) if resonance_state[0] != 0 else 0
-            mag_dB = resonance_state[1] * 30
-            data_collector['resonance_freq_list'].append(freq_linear)
-            data_collector['resonance_gain_list'].append(mag_dB)
-            PlotExporter.plot_frame(pending['CC'], ID_Plant['v2p'], pending['FC'], pending['manual'])
-            print(f"{pending['idx']:4d} | {pending['status']:<11} | {freq_linear:10.5g} | {mag_dB:12.5g}")
-
-            if use_switch_model and resonance_state[0] != 0:
-                resonance_detected += 1
-
-            #判斷是否發散（用剛拿到的誤差）
-            if np.sqrt(np.mean(ek ** 2)) > max_error_um:
-                num_segments = len(data_collector['error_list'])
-                break
-
+    for step in range(num_segments + 1):  # +1 因為誤差有延遲
+        #判斷是否發散
+        if np.sqrt(np.mean((ek_buffer[step % 3])**2)) > max_error_um:
+            num_segments = step - 1
+            break
         if step >= num_segments:
-            break  # 最後一段控制器已模擬並記錄，不再產生新的
+            continue
 
-        if pending is not None:
-            #（用剛拿到的誤差 ek 建下一個 state；與 Runtime 相同：用最新一段的誤差）
-            path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
-            s = np.concatenate([
-                state_action(pending['FC']), path_FFT_magnitude,
-                state_max_resonance(pending['CC'], ID_Plant["v2p"], Ts, pending['seg'], ek),
-                state_error(ek)
-            ])
-
-        #（產生）這一步的控制器（step 0 = 第一個控制器：用初始零狀態 s、誤差 ek 為 0）
+        #產生動作
         if use_switch_model:
             if resonance_detected >= 1:
                 if switch == False:
@@ -386,22 +352,47 @@ try:
         FC[:, 1] = action[numFC:]  # 增益
         FC = FC[np.argsort(FC[:, 0])]  # 按頻率排序
 
-        #合成新控制器（用剛拿到的誤差 ek；step 0 時 ek 仍為初始的零向量）
-        status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek)
+        #合成新控制器並模擬運行（同步：與 Training 相同，當步產生當步套用）
+        status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step % 3])
+        path_segment = path[path_index:path_index + pdl]
 
-        #這個控制器負責「這一段」；依排程選 plant（同階數，X0 可安全帶過切換點）
+        #依排程選當前段的 plant（同階數，X0 可安全帶過切換點）
         phase = get_phase_index(step)
         if phase != _current_phase:
             print(f">>> 切換 Plant @ step {step} ({step*pdl*Ts:.2f}s): "
                   f"{_phase_names[_current_phase]} → {_phase_names[phase]}")
             _current_phase = phase
+        Plant = _phase_plants[phase]
 
-        #（送出）緩衝起來，下一輪才模擬它的誤差
-        pending = {
-            'CC': CC, 'FC': FC.copy(), 'manual': manual_add_FC.copy(), 'status': status,
-            'model': model_tag, 'seg': path[path_index:path_index + pdl].copy(),
-            'plant': _phase_plants[phase]['v2p'], 'idx': step
-        }
+        X0, ek_buffer[(step + 2) % 3, :], _ = CNC.SimulateResponse(path_segment.copy(), CC.copy(), Plant['v2p'], X0, Ts)
+        PlotExporter.plot_frame(CC, ID_Plant['v2p'], FC, manual_add_FC)
+
+        #計算下一步狀態
+        path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index + pdl, dominant_freq)
+        s_ = np.concatenate([
+            state_action(FC), path_FFT_magnitude,
+            state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[(step + 1) % 3]),
+            state_error(ek_buffer[(step + 1) % 3])
+        ])
+
+        #收集實驗資料：控制器/FC/狀態記在本步；誤差延後一步（記上一步的誤差 → 表示致動延遲）
+        data_collector['CC_list'].append(CC.copy())
+        data_collector['FC_list'].append(FC.copy())
+        data_collector['manual_FC_list'].append(manual_add_FC.copy())
+        data_collector['error_list'].append(ek_buffer[(step + 2) % 3].copy())
+        data_collector['status_list'].append(status)
+        data_collector['model_used'].append(model_tag)
+        resonance_state = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[step % 3])
+        freq_linear = 10 ** ((resonance_state[0] / 20) * 30) if resonance_state[0] != 0 else 0
+        mag_dB = resonance_state[1] * 30
+        data_collector['resonance_freq_list'].append(freq_linear)
+        data_collector['resonance_gain_list'].append(mag_dB)
+        print(f"{step:4d} | {status:<11} | {freq_linear:10.5g} | {mag_dB:12.5g}")
+
+        #準備下一步
+        if use_switch_model and resonance_state[0] != 0:
+            resonance_detected += 1
+        s = s_
         path_index += pdl
 except KeyboardInterrupt:
     print("\n[INFO] 使用者中止 (Ctrl+C)，仍會存下已收集的資料...")
@@ -486,3 +477,4 @@ try:
     PlotExporter.plot_error(data_collector['error_list'])
 except Exception as e:
     print(f"[WARNING] MP4/誤差圖產生失敗（資料已存）: {e}")
+#endregion
