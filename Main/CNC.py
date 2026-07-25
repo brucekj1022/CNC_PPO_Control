@@ -210,17 +210,17 @@ class CNCModel:
 
         # 共振峰 1：600 rad/s
         res1 = ctrl.TransferFunction(
-            [1, 6 * zeta * omega, omega**2],
+            [1, 8 * zeta * omega, omega**2],
             [1, 2 * zeta * omega, omega**2]
         )
         # 共振峰 2：800 rad/s
         omega2 = 800
         res2 = ctrl.TransferFunction(
-            [1, 8 * zeta * omega2, omega2**2],
+            [1, 7 * zeta * omega2, omega2**2],
             [1, 2 * zeta * omega2, omega2**2]
         )
         # 串接兩個共振後離散化
-        resonance_tf = ctrl.sample_system(res1 * res2, self.Ts)
+        resonance_tf = ctrl.sample_system(res1 , self.Ts)#* res2
         v2p = v2p * resonance_tf
         v2v = base_plant['v2v'] * resonance_tf
         return {'v2p': v2p, 'v2v': v2v, 'Ts': self.Ts}
@@ -699,7 +699,7 @@ class Costfunction:
                 self.resonanceTable[3, col] -= 1
         
         def suppress_resonance(original_status, Q, FC, path, path_index, ek, 
-                               freq_tolerance=10, reduce_mag=10, increase_mag=5):
+                               freq_tolerance=30, reduce_mag=10, increase_mag=5):
             """偵測並壓制高頻共振"""
             
             def find_working_target(freq, start_target):
@@ -813,7 +813,7 @@ class Costfunction:
             self.X0_hat, ek_hat, _ = SimulateResponse(path_segment, self.CC, self.plant['v2p'], self.X0_hat, self.plant['Ts'])
         else:
             self.X0_hat, ek_hat, _ = SimulateResponse(path_segment, self.CC, self.plant['v2p'], self.X0_hat, self.plant['Ts'])
-        
+
         return status, self.CC, ek_hat, manual_add_FC
 
     def reward(self, FC, status, CC, ek, visual=0):

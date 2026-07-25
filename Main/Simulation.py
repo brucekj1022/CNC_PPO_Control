@@ -159,6 +159,58 @@ def reset_episode_buffers(num_segments, segment_len):
     episode_reward = 0  # 累計 reward
     error_history = []  # 儲存每步誤差
     return data_buffer, ek_buffer, X0, episode_reward, error_history
+def _pad_tf_order(tf, target_den_deg):
+    """把離散 TF 乘 z^k 補到指定分母階數：H(z) 不變、階數升高（分子分母同乘 z^k）。"""
+    num = list(np.atleast_1d(tf.num[0][0]).astype(float))
+    den = list(np.atleast_1d(tf.den[0][0]).astype(float))
+    k = target_den_deg - (len(den) - 1)
+    if k > 0:
+        num = num + [0.0] * k
+        den = den + [0.0] * k
+    return ctrl.TransferFunction(num, den, tf.dt)
+def get_phase_index(step):
+    """依目前 step 落在哪個切換點回傳段索引。"""
+    idx = 0
+    for i, sw in enumerate(_switch_steps):
+        if step >= sw:
+            idx = i
+    return idx
+def generate_controller(state, target_path_index, error_input, generation_step):
+    """產生控制器：generation_step 表示「模型決策/控制器計算」發生的 step。"""
+    global switch, switch_step
+
+    if use_switch_model:
+        if resonance_detected >= 1:
+            if switch == False:
+                print("Switch Model : step ", generation_step, "\n")
+                switch = True
+                switch_step = generation_step
+            action_db = np.array(NO2agent.choose_action(state))
+            generated_model_tag = 'NO2_resonance'
+        else:
+            action_db = np.array(NO1agent.choose_action(state))
+            generated_model_tag = 'NO1_tracking'
+    else:
+        action_db = np.array(agent.choose_action(state))
+        generated_model_tag = 'model1'
+
+    action = 10 ** (action_db / 20)
+    generated_FC = np.zeros((numFC, 2))
+    generated_FC[:, 0] = action[:numFC]
+    generated_FC[:, 1] = action[numFC:]
+    generated_FC = generated_FC[np.argsort(generated_FC[:, 0])]
+
+    generated_status, generated_CC, _, generated_manual_FC = costfunction_x.switch_controller(
+        path, target_path_index, generated_FC.copy(), error_input
+    )
+
+    return (
+        generated_status,
+        generated_CC.copy(),
+        generated_FC.copy(),
+        generated_manual_FC.copy(),
+        generated_model_tag,
+    )
 #endregion
 
 # ============================================================================
@@ -246,6 +298,7 @@ except FileNotFoundError:
 # ============================================================================
 #                            預設控制器
 # ============================================================================
+#region
 #邵平控制器
 CCnub = [8885.431062041,       -24637.015400412543,     31725.764043065406,
  -24272.73172976235,      10722.74306304059  ,    -2552.3219619078864,
@@ -254,6 +307,7 @@ CCnub = [8885.431062041,       -24637.015400412543,     31725.764043065406,
      -0.093678503305545,     -0.018232768906639  ,   -0.011387297705785,
      -0.]
 CC_shaoping = ctrl.tf2ss(ctrl.TransferFunction(CCnub[:8], CCnub[8:], Ts))
+#endregion
 
 # ============================================================================
 #                             實驗開始
@@ -262,16 +316,6 @@ CC_shaoping = ctrl.tf2ss(ctrl.TransferFunction(CCnub[:8], CCnub[8:], Ts))
 FC = np.zeros((numFC, 2))
 
 # ---- 依 PLANT_SCHEDULE 建立各段 plant，並補到相同階數（維持 X0 維度）----
-def _pad_tf_order(tf, target_den_deg):
-    """把離散 TF 乘 z^k 補到指定分母階數：H(z) 不變、階數升高（分子分母同乘 z^k）。"""
-    num = list(np.atleast_1d(tf.num[0][0]).astype(float))
-    den = list(np.atleast_1d(tf.den[0][0]).astype(float))
-    k = target_den_deg - (len(den) - 1)
-    if k > 0:
-        num = num + [0.0] * k
-        den = den + [0.0] * k
-    return ctrl.TransferFunction(num, den, tf.dt)
-
 _schedule = sorted(PLANT_SCHEDULE, key=lambda x: x[0])          # 依切換時間排序
 _phase_names = [name for _, name in _schedule]
 _phase_plants = [getattr(model_x, name)() for name in _phase_names]  # 各段 plant dict（建一次固定）
@@ -279,14 +323,6 @@ _max_den_deg = max(len(p['v2p'].den[0][0]) - 1 for p in _phase_plants)
 for p in _phase_plants:                                          # 全部補到最高階
     p['v2p'] = _pad_tf_order(p['v2p'], _max_den_deg)
 _switch_steps = [int(round(t / (pdl * Ts))) for t, _ in _schedule]  # 秒 → step
-
-def get_phase_index(step):
-    """依目前 step 落在哪個切換點回傳段索引。"""
-    idx = 0
-    for i, sw in enumerate(_switch_steps):
-        if step >= sw:
-            idx = i
-    return idx
 
 print(f"[Plant 排程] {[(t, n) for (t, _), n in zip(_schedule, _phase_names)]}，"
       f"各段補到 {_max_den_deg} 階")
@@ -299,6 +335,7 @@ num_segments = int((len(path) - path_index) / pdl)
 dominant_freq = 0.1
 if use_switch_model:
     switch = False
+    switch_step = None
     resonance_detected = 0
 #暫存區歸零
 costfunction_x.initialize()
@@ -317,46 +354,57 @@ data_collector = {
     'model_used': []
 }
 
-#準備第一個 state
-path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
+# step 0 前只產生 C0
+zero_error = np.zeros(pdl)
+path_FFT_magnitude, dominant_freq, _ = path_FFT(path, 0, dominant_freq)
 last_solved_FC = costfunction_x.last_solved_FC
-s = np.concatenate([state_action(last_solved_FC), path_FFT_magnitude, np.zeros(3)])
+initial_state = np.concatenate([
+    state_action(last_solved_FC),
+    path_FFT_magnitude,
+    np.zeros(3),
+])
+apply_packet = generate_controller(initial_state, 0, zero_error, -1)
 
-# 主迴圈用 try 包住：不論正常結束、例外、或 Ctrl+C，都會落到後面的存檔區
+# step k 開始時可取得的是 e(k-1)；step 0 使用握手零誤差
+available_error = zero_error.copy()
+available_resonance_state = [0, 0]
+
+# 主迴圈：step k 先用 e(k-1) 產生 C(k+1)，再把既有 Ck 套用到 segk
 try:
-    for step in range(num_segments + 1):  # +1 因為誤差有延遲
-        #判斷是否發散
-        if np.sqrt(np.mean((ek_buffer[step % 3])**2)) > max_error_um:
-            num_segments = step - 1
-            break
-        if step >= num_segments:
-            continue
+    for step in range(num_segments):
+        status, CC, applied_FC, applied_manual_FC, model_tag = apply_packet
 
-        #產生動作
-        if use_switch_model:
-            if resonance_detected >= 1:
-                if switch == False:
-                    print("Switch Model : step ", step, "\n")
-                    switch = True
-                a = np.array(NO2agent.choose_action(s))  # 共振模型
-                model_tag = 'NO2_resonance'
-            else:
-                a = np.array(NO1agent.choose_action(s))  # 追蹤模型
-                model_tag = 'NO1_tracking'
-        else:
-            a = np.array(agent.choose_action(s))  # 單模型
-            model_tag = 'model1'
+        # 本 step 產生下一個控制器；它到下一個 segment 才會被套用
+        next_packet = None
+        generated_manual_FC = np.empty((0, 2))
+        # model_used 記錄本 step 用來產生下一個控制器的模型，
+        # 不是本 step 實際套用控制器的來源模型。
+        generated_model_tag = model_tag
+        if step + 1 < num_segments:
+            if use_switch_model and available_resonance_state[0] != 0:
+                resonance_detected += 1
 
-        action = 10 ** (a / 20)  # 從 dB 轉自然數
-        FC[:, 0] = action[:numFC]  # 頻率
-        FC[:, 1] = action[numFC:]  # 增益
-        FC = FC[np.argsort(FC[:, 0])]  # 按頻率排序
+            target_step = step + 1
+            target_path_index = target_step * pdl
+            path_FFT_magnitude, dominant_freq, _ = path_FFT(
+                path, target_path_index, dominant_freq
+            )
+            next_state = np.concatenate([
+                state_action(applied_FC),
+                path_FFT_magnitude,
+                available_resonance_state,
+                state_error(available_error),
+            ])
+            next_packet = generate_controller(
+                next_state, target_path_index, available_error, step
+            )
+            generated_manual_FC = next_packet[3].copy()
+            generated_model_tag = next_packet[4]
 
-        #合成新控制器並模擬運行（同步：與 Training 相同，當步產生當步套用）
-        status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step % 3])
+        path_index = step * pdl
         path_segment = path[path_index:path_index + pdl]
 
-        #依排程選當前段的 plant（同階數，X0 可安全帶過切換點）
+        # 依排程選當前段的 plant（同階數，X0 可安全帶過切換點）
         phase = get_phase_index(step)
         if phase != _current_phase:
             print(f">>> 切換 Plant @ step {step} ({step*pdl*Ts:.2f}s): "
@@ -364,36 +412,42 @@ try:
             _current_phase = phase
         Plant = _phase_plants[phase]
 
-        X0, ek_buffer[(step + 2) % 3, :], _ = CNC.SimulateResponse(path_segment.copy(), CC.copy(), Plant['v2p'], X0, Ts)
-        PlotExporter.plot_frame(CC, ID_Plant['v2p'], FC, manual_add_FC)
+        # 真正執行的是上一個 step 已經完成的 Ck，不是本 step 剛產生的 C(k+1)
+        X0, current_error, _ = CNC.SimulateResponse(
+            path_segment.copy(), CC.copy(), Plant['v2p'], X0, Ts
+        )
+        PlotExporter.plot_frame(CC, ID_Plant['v2p'], applied_FC, applied_manual_FC)
 
-        #計算下一步狀態
-        path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index + pdl, dominant_freq)
-        s_ = np.concatenate([
-            state_action(FC), path_FFT_magnitude,
-            state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[(step + 1) % 3]),
-            state_error(ek_buffer[(step + 1) % 3])
-        ])
-
-        #收集實驗資料：控制器/FC/狀態記在本步；誤差延後一步（記上一步的誤差 → 表示致動延遲）
-        data_collector['CC_list'].append(CC.copy())
-        data_collector['FC_list'].append(FC.copy())
-        data_collector['manual_FC_list'].append(manual_add_FC.copy())
-        data_collector['error_list'].append(ek_buffer[(step + 2) % 3].copy())
-        data_collector['status_list'].append(status)
-        data_collector['model_used'].append(model_tag)
-        resonance_state = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[step % 3])
+        # 共振資料與當步實際誤差、實際套用控制器保持一致
+        resonance_state = state_max_resonance(
+            CC, ID_Plant["v2p"], Ts, path_segment, current_error
+        )
         freq_linear = 10 ** ((resonance_state[0] / 20) * 30) if resonance_state[0] != 0 else 0
         mag_dB = resonance_state[1] * 30
+
+        data_collector['CC_list'].append(CC.copy())
+        data_collector['FC_list'].append(applied_FC.copy())
+        # Plot 的定義：manual_FC_list[step] 是本 step 新增的限制，控制器在 step+1 套用
+        data_collector['manual_FC_list'].append(generated_manual_FC.copy())
+        data_collector['error_list'].append(current_error.copy())
+        data_collector['status_list'].append(status)
+        data_collector['model_used'].append(generated_model_tag)
         data_collector['resonance_freq_list'].append(freq_linear)
         data_collector['resonance_gain_list'].append(mag_dB)
         print(f"{step:4d} | {status:<11} | {freq_linear:10.5g} | {mag_dB:12.5g}")
 
-        #準備下一步
-        if use_switch_model and resonance_state[0] != 0:
-            resonance_detected += 1
-        s = s_
-        path_index += pdl
+        # 判斷是否發散
+        if np.sqrt(np.mean(current_error**2)) > max_error_um:
+            num_segments = step + 1
+            break
+
+        # e_step 只能在下一個 step 才被模型使用
+        available_error = current_error.copy()
+        available_resonance_state = resonance_state
+
+        # 本 step 產生的 C(k+1)，下一個 step 才成為實際套用控制器
+        if next_packet is not None:
+            apply_packet = next_packet
 except KeyboardInterrupt:
     print("\n[INFO] 使用者中止 (Ctrl+C)，仍會存下已收集的資料...")
 except Exception as e:
@@ -459,7 +513,7 @@ experiment_data['status_list'] = np.array(data_collector['status_list'])
 experiment_data['resonance_freq_list'] = np.array(data_collector['resonance_freq_list'])
 experiment_data['resonance_gain_list'] = np.array(data_collector['resonance_gain_list'])
 experiment_data['model_used'] = data_collector['model_used']
-experiment_data['switch_step'] = None if not use_switch_model else (None if not switch else next((i for i, m in enumerate(data_collector['model_used']) if m == 'NO2_resonance'), None))
+experiment_data['switch_step'] = None if not use_switch_model else switch_step
 
 #保存數據到 PlotExporter 建立的資料夾（存檔本身也保護，避免半途失敗）
 try:

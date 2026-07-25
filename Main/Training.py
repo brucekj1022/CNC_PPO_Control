@@ -169,14 +169,14 @@ def state_error(ek):
     weights = 0.7 ** np.arange(len(ek))
     sum_error = np.sum(np.abs(ek) * weights)
     return [np.log1p(sum_error) / 10]
-def reset_episode_buffers(num_segments, segment_len):
-    """重置每輪訓練的暫存區。"""
-    data_buffer = [None] * num_segments  # 儲存計算 reward 前的資料
-    ek_buffer = np.zeros((3, segment_len))  # 模擬誤差延遲 (3 步緩衝)
-    X0 = 0  # 初始狀態
-    episode_reward = 0  # 累計 reward
-    error_history = []  # 儲存每步誤差
-    return data_buffer, ek_buffer, X0, episode_reward, error_history
+def build_state(FC, path_fft_mag, resonance_state, error):
+    """統一建立 PPO state，避免初始與迴圈內重複拼接。"""
+    return np.concatenate([
+        state_action(FC),
+        path_fft_mag,
+        resonance_state,
+        state_error(error),
+    ])
 def get_lr_for_iteration(total_iter):
     """根據累計輪數回傳對應的學習率。"""
     cumulative = 0
@@ -271,61 +271,83 @@ for iteration in range(1, total_iterations + 1):
     num_segments = int((len(path) - path_index) / pdl)
     dominant_freq = 0.1  # 初始 FFT 遮罩頻率
     
-    # 暫存區歸零
+    # 每輪狀態歸零
     costfunction_x.initialize()
-    data_buffer, ek_buffer, X0, episode_reward, error_history = reset_episode_buffers(num_segments, pdl)
+    X0 = 0
+    episode_reward = 0
+    error_history = []
+
+    # 顯式延遲資料流：
+    # step 0、1 的控制器都使用零誤差；step 2 起依序使用 e0、e1...
+    zero_error = np.zeros(pdl)
+    controller_error = zero_error.copy()   # 本 step 合成控制器可使用的誤差 e(k-2)
+    observed_error = zero_error.copy()     # 建立下一個 state 可使用的最新誤差 e(k-1)
+    observed_CC = None                     # 真正造成 observed_error 的控制器
+    observed_path = None                   # 真正產生 observed_error 的路徑區段
+
     # 準備第一個 state
     path_FFT_mag, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
     last_solved_FC = costfunction_x.last_solved_FC
-    s = np.concatenate([state_action(last_solved_FC), path_FFT_mag, np.zeros(3)])
-    
-    for step in range(num_segments + 1):  # +1 因為誤差有延遲
-        # 檢查是否發散
-        rms_error = np.sqrt(np.mean(ek_buffer[step % 3] ** 2))
-        if rms_error > max_error_um:
-            num_segments = step - 1
-            break
-        if step >= num_segments:
-            continue
-        
+    s = build_state(last_solved_FC, path_FFT_mag, [0, 0], zero_error)
+
+    for step in range(num_segments):
         # 產生動作 (Actor 輸出 dB → 轉換為線性值)
         a = np.array(agent.choose_action(s))
         action_linear = 10.0 ** (a / 20.0)
         FC[:, 0] = action_linear[:numFC]  # 頻率
         FC[:, 1] = action_linear[numFC:]  # 增益
         FC = FC[np.argsort(FC[:, 0])]     # 按頻率排序
-        
-        # 合成控制器並模擬
-        status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek_buffer[step % 3])
+
+        # controller_error 的時序為：0、0、e0、e1、...
+        status, CC, _, manual_add_FC = costfunction_x.switch_controller(
+            path, path_index, FC.copy(), controller_error
+        )
         path_segment = path[path_index:path_index + pdl]
-        X0, ek_buffer[(step + 2) % 3, :], _ = CNC.SimulateResponse(path_segment.copy(), CC.copy(), Plant['v2p'], X0, Ts)
+        X0, current_error, _ = CNC.SimulateResponse(
+            path_segment.copy(), CC.copy(), Plant['v2p'], X0, Ts
+        )
         if enable_plot:
             PlotExporter.plot_frame(CC, Plant['v2p'], FC, manual_add_FC)
 
-        # 計算下一步狀態並存入 buffer
-        path_FFT_mag, dominant_freq, _ = path_FFT(path, path_index + pdl, dominant_freq)
-        s_ = np.concatenate([
-            state_action(FC),
-            path_FFT_mag,
-            state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek_buffer[(step + 1) % 3]),
-            state_error(ek_buffer[(step + 1) % 3])
-        ])
-        data_buffer[step] = (
-            s.copy(), a.copy(), s_.copy(), FC.copy(), 
-            status, CC.copy(), path_segment.copy(), ek_buffer[(step + 2) % 3, :].copy()
+        # 下一個 state 保留最新 FC，但共振與誤差使用同一來源：
+        # observed_CC + observed_path -> observed_error
+        if observed_CC is None:
+            resonance_state = [0, 0]
+        else:
+            resonance_state = state_max_resonance(
+                observed_CC,
+                ID_Plant["v2p"],
+                Ts,
+                observed_path,
+                observed_error,
+            )
+
+        path_FFT_mag, dominant_freq, _ = path_FFT(
+            path, path_index + pdl, dominant_freq
         )
-        
+        s_ = build_state(FC, path_FFT_mag, resonance_state, observed_error)
+
+        # reward 使用當步實際配對：CC + current_error
+        current_error = current_error.copy()
+        error_history.append(current_error)
+        r = costfunction_x.reward(FC, status, CC, current_error, visual=0)
+        episode_reward += r
+        replay_buffer.push(s.copy(), a.copy(), r, s_.copy())
+
+        # 更新兩級延遲：下一步 controller 使用目前最新可觀測誤差，
+        # 而下一次建立 state 時，再用本步 CC/path/current_error 做共振分析。
+        controller_error = observed_error.copy()
+        observed_error = current_error
+        observed_CC = CC.copy()
+        observed_path = path_segment.copy()
+
         # 準備下一步
         s = s_
         path_index += pdl
 
-    # 從 data_buffer 計算 reward 並放進 replay_buffer
-    for i in range(num_segments):
-        s, a, s_, FC, status, CC, path_segment, ek = data_buffer[i]
-        error_history.append(ek.copy())
-        r = costfunction_x.reward(FC, status, CC, ek, visual=0)
-        episode_reward += r
-        replay_buffer.push(s.copy(), a.copy(), r, s_.copy())
+        # 當步誤差已經正確寫入 replay buffer，再判斷是否終止。
+        if np.sqrt(np.mean(current_error ** 2)) > max_error_um:
+            break
     
     print(f"Iteration: {iteration:<5} Reward: {episode_reward:.2f}\n")
     if enable_plot:

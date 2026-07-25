@@ -305,6 +305,7 @@ num_segments = int((len(path) - path_index) / pdl)
 dominant_freq = 0.1
 if use_switch_model:
     switch = False
+    switch_step = None
     resonance_detected = 0
 #暫存區歸零
 costfunction_x.initialize()
@@ -317,9 +318,15 @@ last_solved_FC = costfunction_x.last_solved_FC
 s = np.concatenate([state_action(last_solved_FC), path_FFT_magnitude, np.zeros(3)])
 print("Standby for link in \n")
 
+# Runtime step 直接代表 LabVIEW 正在執行的路徑區段：
+# step 0 執行 C0；step 1 仍執行 C0，但同時用 e0 產生 C2；
+# step 2 執行 C2，之後依序類推。第二個區段固定不產生 C1。
+apply_packet = None          # 當前 LV 區段實際套用的控制器資料
+error_source_packet = None   # 剛收到的誤差所對應之上一區段控制器
+
 # 主迴圈用 try 包住：不論正常 break、例外、或 Ctrl+C，都會落到後面的存檔區
 try:
-    for step in range(num_segments + 1):  # 因為 Error 有延遲所以要多一步收集資料
+    for step in range(num_segments + 1):  # step 50 只用來收最後的 e49
         try:
             #等待連線（10秒超時）
             srv.settimeout(10.0)
@@ -336,59 +343,104 @@ try:
             print(f"[ERROR] Connection error at step {step}: {e}, saving data and exit...")
             break
 
-        #建構state並收集error
+        # step 1 收到 e0；step 2 收到 e1；...；step 50 收到 e49
+        resonance_state = [0, 0]
+        freq_linear = 0
+        mag_dB = 0
         if step >= 1:
             data_collector['error_list'].append(ek.copy())
+
+            error_index = step - 1
+            error_path_segment = path[error_index * pdl:(error_index + 1) * pdl]
+            source_CC = error_source_packet[1] if error_source_packet is not None else CC
+
+            # resonance 與 error_list 使用完全相同的最新 ek
+            resonance_state = state_max_resonance(
+                source_CC, ID_Plant["v2p"], Ts, error_path_segment, ek
+            )
+            freq_normalized = resonance_state[0]
+            mag_normalized = resonance_state[1]
+            freq_linear = 10 ** ((freq_normalized / 20) * 30) if freq_normalized != 0 else 0
+            mag_dB = mag_normalized * 30
+            data_collector['resonance_freq_list'].append(freq_linear)
+            data_collector['resonance_gain_list'].append(mag_dB)
+
+            # 最後的 e49 已收完；沒有第 50 個區段，不再產生控制器
             if step == num_segments:
+                print(f"[INFO] Final error e{error_index} received")
                 break
-            path_FFT_magnitude, dominant_freq, _ = path_FFT(path, path_index, dominant_freq)
+
+            # step k 使用最新收到的 e(k-1)，產生下一區段要用的控制器
+            controller_path_index = min(
+                (step + 1) * pdl,
+                (num_segments - 1) * pdl
+            )
+            path_FFT_magnitude, dominant_freq, _ = path_FFT(
+                path, controller_path_index, dominant_freq
+            )
             s = np.concatenate([
                 state_action(FC), path_FFT_magnitude,
-                state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek),
+                resonance_state,
                 state_error(ek)
             ])
 
             #雙模型模式：檢測共振換model
-            if use_switch_model:
-                print(state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)[0])
-                if state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)[0] != 0:
-                    resonance_detected += 1
+            if use_switch_model and resonance_state[0] != 0:
+                resonance_detected += 1
+        else:
+            # 初始握手只產生 C0
+            controller_path_index = 0
 
-        #產生動作
+        #產生動作；model_used[step] 表示本 step 用來產生控制器的模型
         if use_switch_model:
-            if resonance_detected>=1:
-                if switch==False:
-                    print("Switch Model : step ", step,"\n")
-                    switch=True
+            if resonance_detected >= 1:
+                if switch == False:
+                    print("Switch Model : step ", step, "\n")
+                    switch = True
+                    switch_step = step
                 a = np.array(NO2agent.choose_action(s))  # 共振模型
-                data_collector['model_used'].append('NO2_resonance')
+                generated_model_tag = 'NO2_resonance'
             else:
                 a = np.array(NO1agent.choose_action(s))  # 追蹤模型
-                data_collector['model_used'].append('NO1_tracking')
+                generated_model_tag = 'NO1_tracking'
         else:
             a = np.array(agent.choose_action(s))  # 單模型
-            data_collector['model_used'].append('model1')
+            generated_model_tag = 'model1'
 
         action = 10.0 ** (a / 20.0)               # 線性倍率
         FC[:, 0] = action[:numFC]                 # 頻率
         FC[:, 1] = action[numFC:]                 # 增益
         FC = FC[np.argsort(FC[:, 0])]             # 按頻率排序
 
-        #合成新控制器
-        status, CC, ek_hat, manual_add_FC = costfunction_x.switch_controller(path, path_index, FC.copy(), ek)
-        path_segment = path[path_index:path_index + pdl]
+        # 合成新控制器：step 0 -> C0；step 1 -> C2；step 2 -> C3
+        status, generated_CC, ek_hat, generated_manual_FC = costfunction_x.switch_controller(
+            path, controller_path_index, FC.copy(), ek
+        )
+        generated_packet = (
+            status,
+            generated_CC.copy(),
+            FC.copy(),
+            generated_manual_FC.copy(),
+            generated_model_tag,
+        )
 
-        #使用固定控制器 (可選: CC_shaoping, CC_X_central, CC_X_resonance_old, CC_X_resonance_g6_w800, CC_X_boost_6db)
-        # CC = CC_shaoping
+        # step 0：C0 立即套用；step 1：仍套用 C0；step 2 起套用上一 step 產生的控制器
+        if step == 0:
+            apply_packet = generated_packet
 
-        #收集實驗數據（每步）
-        data_collector['CC_list'].append(CC.copy())
-        data_collector['FC_list'].append(FC.copy())
-        data_collector['manual_FC_list'].append(manual_add_FC.copy())
-        data_collector['status_list'].append(status)
+        applied_status, applied_CC, applied_FC, _, _ = apply_packet
 
-        #轉出CC
-        CC_tf = ctrl.ss2tf(CC)
+        # 收集「當前 LV 區段實際套用」的控制器資料
+        data_collector['CC_list'].append(applied_CC.copy())
+        data_collector['FC_list'].append(applied_FC.copy())
+        data_collector['status_list'].append(applied_status)
+
+        # manual_FC / model_used 保留生成時間語意，供 Plot 畫新增與切換時間
+        data_collector['manual_FC_list'].append(generated_manual_FC.copy())
+        data_collector['model_used'].append(generated_model_tag)
+
+        #轉出本 step 新產生、要傳給 LV 的控制器
+        CC_tf = ctrl.ss2tf(generated_CC)
         den = np.array(CC_tf.den[0][0])
         num = np.array(CC_tf.num[0][0])
         if len(num) < len(den):
@@ -405,23 +457,23 @@ try:
             print(f"[ERROR] Send error at step {step}: {e}, saving data and exit...")
             break
 
-        #準備下一步
-        path_index += pdl
-
-        #儲存共振資料並打印
-        resonance_state = state_max_resonance(CC, ID_Plant["v2p"], Ts, path_segment, ek)
-        freq_normalized = resonance_state[0]
-        mag_normalized = resonance_state[1]
-        freq_linear = 10 ** ((freq_normalized / 20) * 30) if freq_normalized != 0 else 0
-        mag_dB = mag_normalized * 30
-        data_collector['resonance_freq_list'].append(freq_linear)
-        data_collector['resonance_gain_list'].append(mag_dB)
         print(
             f"{step:4d} | "
-            f"{status:<11} | "
+            f"{applied_status:<11} | "
             f"{freq_linear:10.5g} | "
             f"{mag_dB:12.5g}"
         )
+
+        # 目前 step 所套用的控制器，會產生下一次收到的誤差
+        error_source_packet = apply_packet
+
+        # 第二個區段寫死繼續使用 C0；從 step 1 結束後才把 C2 排入 step 2
+        if step >= 1 and step < num_segments - 1:
+            apply_packet = generated_packet
+
+        # 保留最新生成控制器供下一步 state_action 使用
+        CC = generated_CC
+
 except KeyboardInterrupt:
     print("\n[INFO] 使用者中止 (Ctrl+C)，仍會存下已收集的資料...")
 except Exception as e:
@@ -492,7 +544,7 @@ experiment_data['status_list'] = np.array(data_collector['status_list'])
 experiment_data['resonance_freq_list'] = np.array(data_collector['resonance_freq_list'])
 experiment_data['resonance_gain_list'] = np.array(data_collector['resonance_gain_list'])
 experiment_data['model_used'] = data_collector['model_used']
-experiment_data['switch_step'] = None if not use_switch_model else (None if not switch else next((i for i, m in enumerate(data_collector['model_used']) if m == 'NO2_resonance'), None))
+experiment_data['switch_step'] = None if not use_switch_model else switch_step
 
 #保存數據到 PlotExporter 建立的資料夾（存檔本身也保護，避免半途失敗）
 try:
